@@ -2,6 +2,7 @@
 import path from 'node:path';
 import { locks } from './checks.ts';
 import type { Holder } from './lock-state.ts';
+import { currentLease } from './meta.ts';
 import { tryRun } from './proc.ts';
 import { log, printTable } from './text.ts';
 
@@ -9,7 +10,7 @@ import { log, printTable } from './text.ts';
 function here(): Holder & { lanePath: string } {
   const top = tryRun('git', ['rev-parse', '--show-toplevel'], process.cwd());
   if (!top) throw new Error('run this inside a lane (or any git checkout)');
-  return { lane: path.basename(top), lanePath: path.resolve(top) };
+  return { lane: path.basename(top), lanePath: path.resolve(top), lease: currentLease(top) };
 }
 
 export function cmdClaim(resource: string, opts: { noWait: boolean }): void {
@@ -33,6 +34,6 @@ export function cmdLocks(): void {
   ]));
 }
 
-export function cmdWith(resource: string, slots: number, argv: readonly string[]): number {
+export function cmdWith(resource: string, argv: readonly string[], slots: number): number {
   return locks().withSlot(resource, slots, here(), argv);
 }

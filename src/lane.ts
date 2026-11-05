@@ -2,17 +2,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Checkout, MainClone } from './checkout.ts';
-import { rmLaneFolder, samePath, isInside, underRoot } from './fsutil.ts';
+import { rmLaneFolder, samePath, underRoot } from './fsutil.ts';
 import { prFor, type Pr } from './github.ts';
+import { mergedInto } from './merged.ts';
+import { readMeta, writeMeta, type SlotMeta } from './meta.ts';
+import { holdAbandoned } from './stale.ts';
 import { age, parseReason, slotNumber, workSafe, type Worktree } from './worktrees.ts';
-
-/** What lane keeps about a slot, in `lane.json` inside the worktree's own git folder. */
-interface SlotMeta {
-  task?: string;
-  released?: boolean;
-  releasedAt?: number;
-  installStamp?: string;
-}
 
 export class Lane extends Checkout {
   readonly clone: MainClone;
@@ -37,15 +32,6 @@ export class Lane extends Checkout {
     return MainClone.all().flatMap((c) => Lane.of(c));
   }
 
-  /** The lane named, or the one the command runs in. */
-  static find(name?: string): Lane {
-    const cwd = process.cwd();
-    const lane = Lane.all().find((l) =>
-      name ? l.name.toLowerCase() === name.toLowerCase() : samePath(l.dir, cwd) || isInside(cwd, l.dir));
-    if (!lane) throw new Error(name ? `no lane called ${name} (see: lane list --local)` : 'not inside a lane; name one');
-    return lane;
-  }
-
   get branch(): string {
     return this.wt.branch;
   }
@@ -59,20 +45,21 @@ export class Lane extends Checkout {
   }
 
   meta(): SlotMeta {
-    try {
-      return JSON.parse(fs.readFileSync(path.join(this.gitDir(), 'lane.json'), 'utf8')) as SlotMeta;
-    } catch {
-      return {};
-    }
+    return readMeta(this.dir);
   }
 
   setMeta(change: SlotMeta): void {
-    fs.writeFileSync(path.join(this.gitDir(), 'lane.json'), `${JSON.stringify({ ...this.meta(), ...change }, null, 2)}\n`);
+    writeMeta(this.dir, change);
   }
 
   /** The task the lane holds, or held last. */
   task(): string | undefined {
     return this.locked !== null ? parseReason(this.locked).task : this.meta().task;
+  }
+
+  /** The lease of the current hold, from the lock reason. */
+  lease(): string | null {
+    return this.locked !== null ? parseReason(this.locked).lease : null;
   }
 
   /** Time since anything changed the index: a session working without a lock does. */
@@ -99,26 +86,36 @@ export class Lane extends Checkout {
     return prFor(this.clone.slug(), this.branch);
   }
 
+  /** Merged: the PR was merged from this very commit, or the base has the work (offline check). */
+  merged(pr: Pr | null): boolean {
+    if (pr?.state === 'MERGED' && pr.head === this.wt.head) return true;
+    return mergedInto(this, `origin/${this.clone.base()}`, this.meta().start);
+  }
+
   /** Whether giving the lane back loses nothing (see workSafe). */
   safe(pr: Pr | null): boolean {
-    return workSafe({ dirty: this.dirty(), unpushed: this.ahead() > 0, mergedHere: pr?.state === 'MERGED' && pr.head === this.wt.head });
+    const unpushed = this.ahead() > 0;
+    return workSafe({ dirty: this.dirty(), unpushed, mergedHere: unpushed && this.merged(pr) });
+  }
+
+  /** A hold that looks left behind: old, the slot unchanged as long, no process using it. */
+  abandoned(): boolean {
+    return holdAbandoned(this.dir, this.locked, this.idleMs());
   }
 
   /** Held for a task (and how long), or free. */
   stateText(): string {
     if (this.locked !== null) {
       const r = parseReason(this.locked);
-      return `held: ${r.task}${r.since ? `, ${age(Date.now() - r.since)}` : ''}`;
+      const left = this.abandoned() ? `, looks abandoned (unchanged ${age(this.idleMs())}, no process)` : '';
+      return `held: ${r.task}${r.since ? `, ${age(Date.now() - r.since)}` : ''}${left}`;
     }
     if (!this.exists) return 'folder missing';
     if (this.released()) return `free (last: ${this.meta().task ?? '?'})`;
     return `not locked, changed ${age(this.idleMs())} ago`;
   }
 
-  /**
-   * Gives the slot back: detached (its branch is free for another checkout, and deleted when
-   * its work is on the remote), unlocked, folder and caches kept for the next task.
-   */
+  /** Detached (the branch is free elsewhere, deleted when safe), unlocked, folder and caches kept. */
   giveBack(safe: boolean): string {
     const task = this.task();
     const branch = this.branch;
@@ -126,7 +123,7 @@ export class Lane extends Checkout {
     if (branch && safe) this.clone.tryGit('branch', '-D', branch);
     if (this.locked !== null) this.clone.tryGit('worktree', 'unlock', this.dir);
     this.setMeta({ task, released: true, releasedAt: Date.now() });
-    const kept = branch ? (safe ? `; local branch ${branch} deleted (no commit on it is missing from the remote)` : `; local branch ${branch} kept`) : '';
+    const kept = branch ? `; local branch ${branch} ${safe ? 'deleted (its work is on the remote or merged)' : 'kept'}` : '';
     return `gave back ${this.name}${task ? ` (was: ${task})` : ''}${kept}`;
   }
 

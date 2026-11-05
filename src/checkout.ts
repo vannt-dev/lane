@@ -23,6 +23,11 @@ export class Checkout {
     return tryRun('git', args, this.dir);
   }
 
+  /** Git with `input` on its stdin (`git patch-id`). */
+  tryGitInput(input: string, ...args: string[]): string | null {
+    return tryRun('git', args, this.dir, input);
+  }
+
   hasRef(ref: string): boolean {
     return this.tryGit('rev-parse', '-q', '--verify', ref) !== null;
   }
@@ -52,6 +57,7 @@ export class Checkout {
 /** The main clone of a repository: a folder in the repos folder; its lanes hang off it. */
 export class MainClone extends Checkout {
   readonly name: string;
+  private baseBranch?: string;
 
   constructor(name: string) {
     super(path.join(config.repos, name));
@@ -74,9 +80,12 @@ export class MainClone extends Checkout {
 
   /** The branch lanes start from: develop when the repository has one, else the default branch. */
   base(): string {
+    // asked once per run: finding origin/HEAD may go to the network
+    if (this.baseBranch) return this.baseBranch;
     const hasDevelop = this.hasRef('refs/remotes/origin/develop');
     if (!hasDevelop) this.tryGit('remote', 'set-head', 'origin', '-a');
-    return pickBase({ hasDevelop, originHead: this.tryGit('symbolic-ref', '--short', 'refs/remotes/origin/HEAD') ?? '' });
+    this.baseBranch = pickBase({ hasDevelop, originHead: this.tryGit('symbolic-ref', '--short', 'refs/remotes/origin/HEAD') ?? '' });
+    return this.baseBranch;
   }
 
   /** `owner/name` on GitHub, or null for another host. */

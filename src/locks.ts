@@ -2,7 +2,7 @@
 // builds running at once (RAM). Locks are files under <lane root>/.locks.
 import fs from 'node:fs';
 import path from 'node:path';
-import { isStale, type Holder, type Lock, type LockInfo } from './lock-state.ts';
+import { isStale, type Holder, type Lock, type LockInfo, type StaleRules } from './lock-state.ts';
 import { errCode, runArgv, sleepMs } from './proc.ts';
 
 type Say = (msg: string) => void;
@@ -11,11 +11,11 @@ const BUSY_CODES = ['EPERM', 'EBUSY', 'EACCES'];
 
 export class Locks {
   readonly dir: string;
-  readonly maxAgeMs: number;
+  private readonly rules: StaleRules;
 
-  constructor(root: string, { maxAgeMs = 3 * 3600_000 }: { maxAgeMs?: number } = {}) {
+  constructor(root: string, rules: Partial<StaleRules> = {}) {
     this.dir = path.join(root, '.locks');
-    this.maxAgeMs = maxAgeMs;
+    this.rules = { maxAgeMs: 3 * 3600_000, laneExists: fs.existsSync, ...rules };
   }
 
   file(name: string): string {
@@ -32,7 +32,7 @@ export class Locks {
   }
 
   private stale(lock: Lock): boolean {
-    return isStale(lock, { maxAgeMs: this.maxAgeMs, laneExists: fs.existsSync });
+    return isStale(lock, this.rules);
   }
 
   /** An unreadable lock file is most likely being written this instant: busy until it is old. */

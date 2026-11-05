@@ -12,7 +12,7 @@ test('lane new takes numbered slots, each locked with its task', () => {
   const b = take('one', 'feat-b');
   assert.equal(path.basename(a), 'one-1');
   assert.equal(path.basename(b), 'one-2');
-  assert.match(locked(main, a) ?? '', /^feat-a @ \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z$/);
+  assert.match(locked(main, a) ?? '', /^feat-a @ \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z #[0-9a-f]{6}$/);
   assert.equal(git(a, 'branch', '--show-current'), 'feat-a');
   assert.throws(() => cmdNew('one', 'feat-a', { branch: 'other', install: false, open: false }), /feat-a already holds one-1/);
 });
@@ -78,17 +78,17 @@ test('lane rm deletes a slot, but not a held one without --force', () => {
   assert.equal(fs.existsSync(a), false);
 });
 
-test('lane port adds the slot number to the usual port', () => {
+test('lane port gives each slot its own range of ports', () => {
   makeRepo('seven');
   take('seven', 'feat-a');
   const b = take('seven', 'feat-b');
   const cwd = process.cwd();
   process.chdir(b);
   try {
-    const { out } = capture(() => cmdPort(5180));
-    assert.equal(out.trim(), '5182');
+    assert.equal(capture(() => cmdPort(5180, 0)).out.trim(), '5200');
+    assert.equal(capture(() => cmdPort(5180, 3)).out.trim(), '5203');
   } finally {
     process.chdir(cwd);
   }
-  assert.match(fs.readFileSync(path.join(b, 'CLAUDE.local.md'), 'utf8'), /This lane is slot 2/);
+  assert.match(fs.readFileSync(path.join(b, 'CLAUDE.local.md'), 'utf8'), /slot 2: its ports are the usual port \+ 20 to \+ 29/);
 });

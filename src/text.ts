@@ -15,11 +15,18 @@ export function printTable(head: readonly string[], rows: readonly (readonly str
 
 const unix = (p: string) => p.replace(/\\/g, '/');
 
-/** Lanes run servers side by side: each slot shifts the usual port by its number. */
-function portRule(slot: number): string {
+/** What makes one hold of one slot: its number, its lease, the port range step. */
+interface HoldInfo {
+  slot: number | null;
+  lease: string | null;
+  stride: number;
+}
+
+/** Lanes run servers side by side: slot n owns the ports usual + n × stride … + stride - 1. */
+function portRule(slot: number, stride: number): string {
   return (
-    `- This lane is slot ${slot}. A dev server you start listens on \`lane port <its usual port>\` ` +
-    `(the usual port + ${slot}), never the usual port itself, so lanes do not take each other's port.`
+    `- This lane is slot ${slot}: its ports are the usual port + ${slot * stride} to + ${slot * stride + stride - 1}. ` +
+    `A dev server you start listens on \`lane port <its usual port> [0-${stride - 1}]\`, never the usual port itself.`
   );
 }
 
@@ -28,19 +35,27 @@ const SHARED_RULES = [
   '- The Android emulator: `lane claim emulator` before using it, `lane release emulator` right after.',
   '- One pull request for this lane. Do not bump the version or edit the CHANGELOG: releases are made after the lanes merge.',
 ];
-const GIVE_BACK = '- When the work is pushed or merged, `lane done` gives this slot back (its folder and caches stay for the next task).';
+
+/** The rules that depend on the hold: the port range, and how to give the slot back. */
+function holdRules(h: HoldInfo): string[] {
+  const done = h.lease ? `\`lane done --lease ${h.lease}\`` : '`lane done`';
+  return [
+    ...(h.slot ? [portRule(h.slot, h.stride)] : []),
+    `- When the work is pushed or merged, ${done} gives this slot back (its folder and caches stay for the next task).`,
+  ];
+}
 
 export const NOTES_HEADER = '# Lane notes (written by `lane new`, not committed)';
 
 /** CLAUDE.local.md of a lane: what Claude Code started inside it must know. */
-export function laneNotes(slot: number | null): string {
+export function laneNotes(h: HoldInfo): string {
   const intro = 'This checkout is a lane: one of several git worktrees of this repo worked on at the same time.';
-  const rules = [...SHARED_RULES, ...(slot ? [portRule(slot)] : []), GIVE_BACK, "- Never use, clean or reset another lane's folder."];
+  const rules = [...SHARED_RULES, ...holdRules(h), "- Never use, clean or reset another lane's folder."];
   return `${NOTES_HEADER}\n\n${intro}\n\n${rules.join('\n')}\n`;
 }
 
 /** What an agent working in a lane must know, to paste at the top of its task. */
-export function briefText(input: {
+export function briefText(input: HoldInfo & {
   lane: string;
   path: string;
   branch: string;
@@ -48,7 +63,6 @@ export function briefText(input: {
   mainClone: string;
   others: readonly string[];
   checks: readonly string[];
-  slot: number | null;
 }): string {
   const p = unix(input.path);
   const away = input.others.length ? ` or in the other lanes: ${input.others.map((o) => `\`${unix(o)}\``).join(', ')}.` : '.';
@@ -58,9 +72,8 @@ export function briefText(input: {
     `- Start every shell command with \`cd ${p} && \`; give every file tool an absolute path under \`${p}\`.`,
     `- Never read, edit or run anything in the main clone \`${unix(input.mainClone)}\`${away}`,
     ...SHARED_RULES,
-    ...(input.slot ? [portRule(input.slot)] : []),
     ...(input.checks.length ? [`- Checks to pass before you push: ${input.checks.map((c) => `\`${c}\``).join(', ')}.`] : []),
-    GIVE_BACK,
+    ...holdRules(input),
   ];
   return `${lines.join('\n')}\n`;
 }

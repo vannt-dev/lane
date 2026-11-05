@@ -6,6 +6,8 @@ export const config = {
   repos: process.env.LANE_REPOS || 'F:/ai-agent',
   /** Slots per repository; a full pool lists who holds what instead of taking a slot. */
   maxSlots: Number(process.env.LANE_MAX_SLOTS || 4),
+  /** Ports per slot: slot n owns the usual port + n x stride, up to stride ports. */
+  portStride: Number(process.env.LANE_PORT_STRIDE || 10),
 };
 
 /**

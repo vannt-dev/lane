@@ -54,22 +54,25 @@ export function slotNumber(name: string, repo: string): number | null {
   return m && m[1] === repo.toLowerCase() ? Number(m[2]) : null;
 }
 
-/** The reason `git worktree lock` records: what the slot is held for, and since when (UTC). */
-export function lockReason(task: string, now: Date): string {
-  return `${task} @ ${now.toISOString().slice(0, 16).replace('T', ' ')}Z`;
+/**
+ * The reason `git worktree lock` records: what the slot is held for, since when (UTC), and
+ * the hold's lease id.
+ */
+export function lockReason(task: string, now: Date, lease: string): string {
+  return `${task} @ ${now.toISOString().slice(0, 16).replace('T', ' ')}Z #${lease}`;
 }
 
-/** The task and start time back out of a lock reason (another tool's reason is all task). */
-export function parseReason(reason: string): { task: string; since: number | null } {
-  const m = reason.match(/^(.*) @ (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})Z$/);
-  if (!m || !m[1]) return { task: reason, since: null };
-  return { task: m[1], since: Date.parse(`${m[2]}T${m[3]}:00Z`) };
+/** Task, start time and lease back out of a lock reason (another tool's reason is all task). */
+export function parseReason(reason: string): { task: string; since: number | null; lease: string | null } {
+  const m = reason.match(/^(.*) @ (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})Z(?: #([0-9a-f]+))?$/);
+  if (!m || !m[1]) return { task: reason, since: null, lease: null };
+  return { task: m[1], since: Date.parse(`${m[2]}T${m[3]}:00Z`), lease: m[4] ?? null };
 }
 
 /**
- * Whether a lane's work is safe on the remote: nothing uncommitted, and its commits pushed or
- * merged. After a squash merge GitHub deletes the branch, so the commits are on no remote any
- * more; they are safe when the lane still sits on the commit the PR was merged from.
+ * Whether a lane's work is safe: nothing uncommitted, and its commits pushed or merged. After
+ * a squash merge GitHub deletes the branch, so the commits are on no remote any more; they are
+ * safe when the PR was merged from this commit, or the base has the change (see mergedInto).
  */
 export function workSafe(s: { dirty: number; unpushed: boolean; mergedHere: boolean }): boolean {
   return s.dirty === 0 && (!s.unpushed || s.mergedHere);

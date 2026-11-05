@@ -1,9 +1,12 @@
 // Running programs. Everything else goes through these few functions.
 import { spawnSync } from 'node:child_process';
 
-/** Runs a program without a shell; returns trimmed stdout, throws with stderr on failure. */
-export function run(cmd: string, args: readonly string[], cwd?: string): string {
-  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', windowsHide: true });
+/**
+ * Runs a program without a shell, `input` on its stdin; returns trimmed stdout, throws with
+ * stderr on failure. The buffer is large: `git log -p` of a busy branch is many megabytes.
+ */
+export function run(cmd: string, args: readonly string[], cwd?: string, input?: string): string {
+  const r = spawnSync(cmd, args, { cwd, input, encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
   if (r.error) throw r.error;
   if (r.status !== 0) {
     const msg = (r.stderr || r.stdout || '').trim();
@@ -13,9 +16,9 @@ export function run(cmd: string, args: readonly string[], cwd?: string): string 
 }
 
 /** Like run, but null instead of an error. */
-export function tryRun(cmd: string, args: readonly string[], cwd?: string): string | null {
+export function tryRun(cmd: string, args: readonly string[], cwd?: string, input?: string): string | null {
   try {
-    return run(cmd, args, cwd);
+    return run(cmd, args, cwd, input);
   } catch {
     return null;
   }

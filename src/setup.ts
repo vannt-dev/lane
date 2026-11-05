@@ -1,7 +1,7 @@
 // What a new or reused slot needs before work starts in it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { COPY_DEFAULT } from './config.ts';
+import { config, COPY_DEFAULT } from './config.ts';
 import { HEAVY_HOOKS, HOOK_NAMES, installCommands, installStamp, LOCKFILES } from './detect.ts';
 import type { Lane } from './lane.ts';
 import { runLive } from './proc.ts';
@@ -73,7 +73,7 @@ export class LaneSetup {
       fs.mkdirSync(path.dirname(exclude), { recursive: true });
       fs.appendFileSync(exclude, `${cur && !cur.endsWith('\n') ? '\n' : ''}/CLAUDE.local.md\n`);
     }
-    fs.writeFileSync(file, laneNotes(this.lane.slot));
+    fs.writeFileSync(file, laneNotes({ slot: this.lane.slot, lease: this.lane.lease(), stride: config.portStride }));
   }
 
   /**

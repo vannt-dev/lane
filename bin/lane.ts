@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdBrief, cmdClaim, cmdClean, cmdDone, cmdList, cmdLocks, cmdNew, cmdPort, cmdRelease, cmdRemove, cmdSync,
-  cmdVerify, cmdWith, config,
+  cmdBrief, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdNew, cmdPort, cmdRelease, cmdRemove,
+  cmdSync, cmdVerify, cmdWith, config,
 } from '../src/index.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
@@ -12,27 +12,30 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   dependencies and build caches kept for the next task.
 
   lane new <repo> <task> [--base B] [--branch NAME] [--no-install] [--open]
-      Take a slot for a task: the one it had before, else a free one, else a new one.
-      New branch (default: the task name) from origin/develop if it exists, else the default
-      branch. Loads submodules, copies untracked .env-type files, installs dependencies only
-      when the lockfiles changed, --open starts Claude Code. Its pre-push hook waits for a
-      build slot.
+      Take a slot for a task: the one it had before, else a free one, else a new one. New
+      branch (default: the task name) from origin/develop if it exists, else the default
+      branch. Submodules, untracked .env-type files, dependencies (only when the lockfiles
+      changed), CLAUDE.local.md; --open starts Claude Code. Prints the hold's lease.
   lane new <repo> --pr <n>   A slot on an existing pull request's branch (to test or finish it)
-  lane done [<lane>] [--force]
-                             Give the slot back once its work is pushed (or the PR merged)
-  lane list [--local]        Every lane: held/free, branch, local changes, PR and CI
-  lane clean [--yes]         Give back the slots whose PR merged; --yes does it and pulls the main clone
+  lane done [<lane>] [--lease ID] [--force]
+                             Give the slot back once its work is pushed or merged; with --lease,
+                             only while the slot is still held under that lease
+  lane free <lane> [--yes] [--force]
+                             Free a hold that looks abandoned (hours unchanged, no process in it)
+  lane list [--local]        Every lane: held/free (or abandoned), branch, local changes, PR and CI
+  lane clean [--yes]         Give back the slots whose work merged (GitHub, or found offline),
+                             then pull the main clones
   lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work)
-  lane port <usual port>     The port for a dev server in this slot: the usual port + the slot number
+  lane port <usual port> [k] Port k of this slot's range: usual + slot x ${config.portStride} + k
 
   lane verify <repo> [--cmd C]... [--keep]
-      Merge all open lanes of a repo together in a throwaway checkout and run the checks:
-      finds lanes that merge cleanly but break each other, before the first one merges.
+      Merge all open lanes of a repo together in a slot and run the checks: finds lanes that
+      merge cleanly but break each other, before the first one merges.
   lane sync <repo> [--push] [--cmd C]...
       After a lane merged: rebase the other lanes onto the new base and run their checks again.
   lane brief [<lane>]        The rules for an agent working in a lane, to paste into its task
 
-  lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator) for this lane; waits if busy
+  lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator); ends with this lane's hold
   lane release <res>            Give it back
   lane with <res> [--slots N] -- <command>
                                 Run a command holding one of N slots (default: build has 2)
@@ -40,7 +43,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
 
   Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
   package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
-  <repo> is a folder in ${config.repos}. Env: LANE_ROOT, LANE_REPOS, LANE_MAX_SLOTS.`;
+  <repo> is a folder in ${config.repos}.
+  Env: LANE_ROOT, LANE_REPOS, LANE_MAX_SLOTS, LANE_PORT_STRIDE.`;
 
 // Everything after "--" is the command for `lane with`, passed through untouched.
 const argv = process.argv.slice(2);
@@ -53,6 +57,7 @@ const options = {
     base: { type: 'string' },
     branch: { type: 'string' },
     pr: { type: 'string' },
+    lease: { type: 'string' },
     'no-install': { type: 'boolean', default: false },
     open: { type: 'boolean', default: false },
     local: { type: 'boolean', default: false },
@@ -76,10 +81,10 @@ try {
 }
 const { values, positionals } = parsed;
 
-function prNumber(): number | undefined {
-  if (values.pr === undefined) return undefined;
-  const n = Number(values.pr);
-  if (!Number.isInteger(n) || n < 1) throw new Error('--pr must be a pull request number');
+/** A whole number in [min, max], or an error naming what it is. */
+function whole(text: string, what: string, min: number, max: number): number {
+  const n = Number(text);
+  if (!Number.isInteger(n) || n < min || n > max) throw new Error(`${what} must be a whole number from ${min} to ${max}`);
   return n;
 }
 
@@ -90,7 +95,7 @@ function main(): number {
     console.log(HELP);
     return 0;
   }
-  const pr = prNumber();
+  const pr = values.pr === undefined ? undefined : whole(values.pr, '--pr', 1, Number.MAX_SAFE_INTEGER);
   if (cmd === 'new' && a !== undefined && extra.length === 0 && (b !== undefined || pr !== undefined)) {
     cmdNew(a, b, { base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open });
   } else if (cmd === 'list') cmdList({ local: values.local });
@@ -99,19 +104,15 @@ function main(): number {
   else if (cmd === 'verify' && one) return cmdVerify(a, { cmds: values.cmd, keep: values.keep });
   else if (cmd === 'sync' && one) return cmdSync(a, { cmds: values.cmd, push: values.push });
   else if (cmd === 'brief' && b === undefined) cmdBrief(a);
-  else if (cmd === 'done' && b === undefined) cmdDone(a, { force: values.force });
-  else if (cmd === 'port' && one) {
-    const base = Number(a);
-    if (!Number.isInteger(base) || base < 1 || base > 65535) throw new Error('lane port needs a port number');
-    cmdPort(base);
-  }
-  else if (cmd === 'claim' && one) cmdClaim(a, { noWait: values['no-wait'] });
+  else if (cmd === 'done' && b === undefined) cmdDone(a, { force: values.force, lease: values.lease });
+  else if (cmd === 'free' && one) cmdFree(a, { yes: values.yes, force: values.force });
+  else if (cmd === 'port' && a !== undefined && extra.length === 0) {
+    cmdPort(whole(a, 'the port', 1, 65535), b === undefined ? 0 : whole(b, 'the port offset', 0, config.portStride - 1));
+  } else if (cmd === 'claim' && one) cmdClaim(a, { noWait: values['no-wait'] });
   else if (cmd === 'release' && one) cmdRelease(a);
   else if (cmd === 'locks') cmdLocks();
   else if (cmd === 'with' && one && tail.length > 0) {
-    const slots = Number(values.slots ?? (a === 'build' ? 2 : 1));
-    if (!Number.isInteger(slots) || slots < 1) throw new Error('--slots must be a whole number >= 1');
-    return cmdWith(a, slots, tail);
+    return cmdWith(a, tail, whole(values.slots ?? (a === 'build' ? '2' : '1'), '--slots', 1, 64));
   } else {
     console.error(HELP);
     return 2;

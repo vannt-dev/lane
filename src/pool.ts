@@ -1,4 +1,5 @@
 // The slot pool of a repository: numbered worktrees, held with `git worktree lock` and reused.
+import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { MainClone } from './checkout.ts';
@@ -85,7 +86,8 @@ export class SlotPool {
           'for something else: give one back (lane done) once its work is pushed, or raise LANE_MAX_SLOTS');
       }
       const dest = path.join(config.root, slotName(this.clone.name, choice.n));
-      const reason = lockReason(task, new Date());
+      const lease = randomBytes(3).toString('hex');
+      const reason = lockReason(task, new Date(), lease);
       if (choice.kind === 'create') {
         this.clearFolder(dest);
         target.add(this.clone, dest, reason);
@@ -95,7 +97,7 @@ export class SlotPool {
       }
       const lane = this.slots().find((l) => l.slot === choice.n);
       if (!lane) throw new Error(`${dest} was taken but git does not list it`);
-      lane.setMeta({ task, released: false });
+      lane.setMeta({ task, lease, start: lane.git('rev-parse', 'HEAD'), released: false });
       return { lane, reused: choice.kind === 'reuse' };
     }
     throw new Error(`could not lock a slot of ${this.clone.name}; another session keeps taking them, try again`);

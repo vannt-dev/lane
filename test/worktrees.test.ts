@@ -31,10 +31,12 @@ test('slot names and lock reasons round-trip', () => {
   assert.equal(slotNumber('repokeeper-demo-go-1', 'repokeeper-demo-go'), 1);
   assert.equal(slotNumber('repokeeper-feat-x', 'repokeeper'), null);
   assert.equal(slotNumber('other-1', 'repokeeper'), null);
-  const reason = lockReason('feat/x', new Date('2026-11-05T16:02:30Z'));
-  assert.equal(reason, 'feat/x @ 2026-11-05 16:02Z');
-  assert.deepEqual(parseReason(reason), { task: 'feat/x', since: Date.parse('2026-11-05T16:02:00Z') });
-  assert.deepEqual(parseReason('someone else'), { task: 'someone else', since: null });
+  const reason = lockReason('feat/x', new Date('2026-11-05T16:02:30Z'), 'a1b2c3');
+  assert.equal(reason, 'feat/x @ 2026-11-05 16:02Z #a1b2c3');
+  const since = Date.parse('2026-11-05T16:02:00Z');
+  assert.deepEqual(parseReason(reason), { task: 'feat/x', since, lease: 'a1b2c3' });
+  assert.deepEqual(parseReason('feat/x @ 2026-11-05 16:02Z'), { task: 'feat/x', since, lease: null });
+  assert.deepEqual(parseReason('someone else'), { task: 'someone else', since: null, lease: null });
 });
 
 test('workSafe needs a clean tree and pushed (or squash-merged) commits', () => {

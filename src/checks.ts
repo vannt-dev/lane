@@ -6,9 +6,11 @@ import { config } from './config.ts';
 import { checkCommands } from './detect.ts';
 import type { Holder } from './lock-state.ts';
 import { Locks } from './locks.ts';
+import { currentLease } from './meta.ts';
 import { listLines, log } from './text.ts';
 
-export const locks = () => new Locks(config.root);
+/** The locks on shared things; a claim ends with the lane hold it was made under. */
+export const locks = () => new Locks(config.root, { currentLease });
 
 /** Check commands for a checkout: --cmd, else the main clone's `.lanecheck`, else detected. */
 export function checksFor(mainClone: Checkout, checkout: Checkout, custom?: readonly string[]): string[] {

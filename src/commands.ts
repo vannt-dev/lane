@@ -1,14 +1,16 @@
-// The lane commands: take, give back, list, clean and remove slots; brief and port.
+// Working in one lane: take a slot, give it back, free a left-behind hold, its port and brief.
 import { spawn } from 'node:child_process';
 import { MainClone } from './checkout.ts';
 import { checksFor } from './checks.ts';
 import { config } from './config.ts';
-import { leftovers, rmLaneFolder } from './fsutil.ts';
+import { findLane } from './find.ts';
 import { Lane } from './lane.ts';
 import { SlotPool } from './pool.ts';
 import { LaneSetup } from './setup.ts';
+import { ABANDONED_MS } from './stale.ts';
 import { targetFor, type TargetOptions } from './target.ts';
-import { briefText, log, printTable } from './text.ts';
+import { briefText, log } from './text.ts';
+import { age } from './worktrees.ts';
 
 interface NewOptions extends TargetOptions {
   install: boolean;
@@ -23,10 +25,11 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   clone.fetch();
   const target = targetFor(clone, name, opts);
   const { lane, reused } = new SlotPool(clone).take(name, target);
-  log(`lane ${lane.name} (${reused ? 'reused' : 'new'} slot): ${target.describe()}, held for ${name}`);
+  const lease = lane.lease();
+  log(`lane ${lane.name} (${reused ? 'reused' : 'new'} slot): ${target.describe()}, held for ${name}, lease ${lease}`);
   new LaneSetup(lane).run({ install: opts.install });
   if (opts.open) openClaude(lane.dir);
-  else log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done)`);
+  else log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
   return lane.dir;
 }
 
@@ -38,9 +41,15 @@ function openClaude(dir: string): void {
   log(`opened Claude Code in ${dir}`);
 }
 
-/** Gives a slot back once its work is safe on the remote (--force: unpushed commits stay local). */
-export function cmdDone(name: string | undefined, opts: { force: boolean }): void {
-  const lane = Lane.find(name);
+/**
+ * Gives a slot back once its work is safe (--force: unpushed commits stay on the local branch).
+ * With --lease, refuses when the slot is held under another lease: a late give-back from a task
+ * that already ended never frees the task that took the slot after it.
+ */
+export function cmdDone(name: string | undefined, opts: { force: boolean; lease?: string }): void {
+  const lane = findLane(name);
+  if (opts.lease && lane.lease() !== opts.lease)
+    throw new Error(`${lane.name} is not held under lease ${opts.lease} any more (${lane.stateText()}); nothing given back`);
   const dirty = lane.dirty();
   if (dirty) throw new Error(`${lane.name} has ${dirty} uncommitted change(s): commit and push them first`);
   const safe = lane.safe(lane.pr());
@@ -49,63 +58,37 @@ export function cmdDone(name: string | undefined, opts: { force: boolean }): voi
   log(lane.giveBack(safe));
 }
 
-export function cmdList(opts: { local: boolean }): void {
-  const lanes = Lane.all();
-  if (lanes.length === 0) return log(`no lanes under ${config.root}`);
-  printTable(['lane', 'state', 'branch', 'local', 'PR / CI'], lanes.map((l) => {
-    const pr = opts.local || !l.branch ? undefined : l.pr();
-    const prText = pr === undefined ? '-' : pr ? `#${pr.number} ${pr.state.toLowerCase()} ${pr.checks}` : 'no PR';
-    return [l.name, l.stateText(), l.branch || '(detached)', l.exists ? `${l.dirty()} changed, ${l.ahead()} unpushed` : '-', prText];
-  }));
+/**
+ * Frees a hold that looks left behind (an agent killed or closed without `lane done`): held and
+ * unchanged for hours, no process using the slot. --force frees one that does not look so.
+ * Never when work in it would be lost.
+ */
+export function cmdFree(name: string, opts: { yes: boolean; force: boolean }): void {
+  const lane = findLane(name);
+  if (lane.locked === null) return log(`${lane.name} is not held`);
+  if (!opts.force && !lane.abandoned())
+    throw new Error(`${lane.name} does not look abandoned (${lane.stateText()}): that takes ${age(ABANDONED_MS)} ` +
+      'held and unchanged with no process in it; --force frees it anyway');
+  if (!lane.safe(lane.pr()))
+    throw new Error(`${lane.name} holds work that is not on the remote; freeing it would lose that (lane rm --force drops it on purpose)`);
+  if (!opts.yes) return log(`${lane.name} (${lane.stateText()}) can be freed. Run again with --yes.`);
+  log(lane.giveBack(true));
 }
 
-/** Gives back the lanes whose PR merged, removes lanes whose folder is gone, then pulls. */
-export function cmdClean(opts: { yes: boolean }): void {
-  const lanes = Lane.all();
-  const actions: Array<() => void> = [];
-  for (const l of lanes.filter((x) => x.branch || !x.exists)) {
-    const pr = l.exists ? l.pr() : null;
-    const merged = pr?.state === 'MERGED' && l.safe(pr);
-    const why = !l.exists ? 'folder missing' : !pr ? 'no PR' : merged ? `PR #${pr.number} merged` : `PR #${pr.number} ${pr.state.toLowerCase()}`;
-    const act = !l.exists ? 'remove' : merged ? 'give back' : 'keep';
-    log(`${act.padEnd(9)}  ${l.name}  (${why})`);
-    if (act === 'remove') actions.push(() => log(l.remove()));
-    if (act === 'give back') actions.push(() => log(l.giveBack(true)));
-  }
-  for (const dir of leftovers(lanes.map((l) => l.name))) {
-    log(`remove     ${dir}  (folder no repository knows)`);
-    actions.push(() => rmLaneFolder(dir) && log(`removed ${dir}`));
-  }
-  if (actions.length === 0) return log('nothing to clean');
-  if (!opts.yes) return log(`\n${actions.length} item(s) to act on. Run again with --yes.`);
-  for (const act of actions) act();
-  for (const clone of MainClone.all().filter((c) => lanes.some((l) => l.clone.name === c.name))) clone.pull();
-}
-
-/** Deletes a slot for good, folder and caches included. */
-export function cmdRemove(name: string, opts: { force: boolean }): void {
-  const lane = Lane.find(name);
-  if (!opts.force && lane.locked !== null)
-    throw new Error(`${name} is held (${lane.locked}); give it back with lane done, or --force to remove it anyway`);
-  if (!opts.force && lane.exists && (lane.dirty() || lane.ahead()))
-    throw new Error(`${name} has uncommitted or unpushed work; --force drops it`);
-  log(lane.remove());
-}
-
-/** The port for a dev server in this slot: the usual port plus the slot number. */
-export function cmdPort(base: number): void {
+/** A port of this slot's range: the usual port + slot × LANE_PORT_STRIDE + offset. */
+export function cmdPort(base: number, offset: number): void {
   let slot: number | null = null;
   try {
-    slot = Lane.find().slot;
+    slot = findLane().slot;
   } catch {
     console.error('lane: not in a slot; the usual port');
   }
-  console.log(String(base + (slot ?? 0)));
+  console.log(String(base + (slot ?? 0) * config.portStride + offset));
 }
 
 /** Prints what an agent working in a lane must know. */
 export function cmdBrief(name?: string): void {
-  const lane = Lane.find(name);
+  const lane = findLane(name);
   const others = Lane.of(lane.clone).filter((l) => l.name !== lane.name).map((l) => l.dir);
   process.stdout.write(briefText({
     lane: lane.name,
@@ -116,5 +99,7 @@ export function cmdBrief(name?: string): void {
     others,
     checks: checksFor(lane.clone, lane),
     slot: lane.slot,
+    lease: lane.lease(),
+    stride: config.portStride,
   }));
 }
