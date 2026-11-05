@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdClaim, cmdClean, cmdList, cmdLocks, cmdNew, cmdRelease, cmdRemove, cmdWith, config,
+  cmdBrief, cmdClaim, cmdClean, cmdList, cmdLocks, cmdNew, cmdRelease, cmdRemove, cmdSync, cmdVerify, cmdWith,
+  config,
 } from '../src/commands.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
@@ -10,9 +11,19 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       New worktree ${config.root}/<repo>-<task> on a new branch (default: the task name)
       from origin/develop if it exists, else the default branch. Loads submodules,
       copies untracked .env-type files, installs dependencies, --open starts Claude Code.
+      A pre-push hook in the lane waits for a build slot.
+  lane new <repo> --pr <n>   A lane on an existing pull request's branch (to test or finish it)
   lane list [--local]        Every lane: branch, local changes, PR and CI (--local: no GitHub calls)
-  lane clean [--yes]         Lanes whose PR is merged and tree is clean; --yes removes them
+  lane clean [--yes]         Lanes whose PR is merged and tree is clean; --yes removes them and
+                             pulls the main clone
   lane rm <lane> [--force]   Remove one lane (--force drops uncommitted/unpushed work)
+
+  lane verify <repo> [--cmd C]... [--keep]
+      Merge all open lanes of a repo together in a throwaway checkout and run the checks:
+      finds lanes that merge cleanly but break each other, before the first one merges.
+  lane sync <repo> [--push] [--cmd C]...
+      After a lane merged: rebase the other lanes onto the new base and run their checks again.
+  lane brief [<lane>]        The rules for an agent working in a lane, to paste into its task
 
   lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator) for this lane; waits if busy
   lane release <res>            Give it back
@@ -20,28 +31,50 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
                                 Run a command holding one of N slots (default: build has 2)
   lane locks                    Who holds what
 
+  Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
+  package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
   <repo> is a folder in ${config.repos}. Env: LANE_ROOT, LANE_REPOS.`;
 
 // Everything after "--" is the command for `lane with`, passed through untouched.
 const argv = process.argv.slice(2);
 const dash = argv.indexOf('--');
 const tail = dash >= 0 ? argv.slice(dash + 1) : [];
-const { values, positionals } = parseArgs({
+const options = {
   args: dash >= 0 ? argv.slice(0, dash) : argv,
   allowPositionals: true,
   options: {
     base: { type: 'string' },
     branch: { type: 'string' },
+    pr: { type: 'string' },
     'no-install': { type: 'boolean', default: false },
     open: { type: 'boolean', default: false },
     local: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
+    keep: { type: 'boolean', default: false },
+    push: { type: 'boolean', default: false },
+    cmd: { type: 'string', multiple: true },
     'no-wait': { type: 'boolean', default: false },
     slots: { type: 'string' },
     help: { type: 'boolean', short: 'h', default: false },
   },
-});
+} as const;
+
+let parsed: ReturnType<typeof parseArgs<typeof options>>;
+try {
+  parsed = parseArgs(options);
+} catch (e) {
+  console.error(`lane: ${e instanceof Error ? e.message.split('\n')[0] : String(e)} (see: lane --help)`);
+  process.exit(2);
+}
+const { values, positionals } = parsed;
+
+function prNumber(): number | undefined {
+  if (values.pr === undefined) return undefined;
+  const n = Number(values.pr);
+  if (!Number.isInteger(n) || n < 1) throw new Error('--pr must be a pull request number');
+  return n;
+}
 
 function main(): number {
   const [cmd, a, b, ...extra] = positionals;
@@ -50,11 +83,15 @@ function main(): number {
     console.log(HELP);
     return 0;
   }
-  if (cmd === 'new' && a !== undefined && b !== undefined && extra.length === 0) {
-    cmdNew(a, b, { base: values.base, branch: values.branch, install: !values['no-install'], open: values.open });
+  const pr = prNumber();
+  if (cmd === 'new' && a !== undefined && extra.length === 0 && (b !== undefined || pr !== undefined)) {
+    cmdNew(a, b, { base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open });
   } else if (cmd === 'list') cmdList({ local: values.local });
   else if (cmd === 'clean') cmdClean({ yes: values.yes });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
+  else if (cmd === 'verify' && one) return cmdVerify(a, { cmds: values.cmd, keep: values.keep });
+  else if (cmd === 'sync' && one) return cmdSync(a, { cmds: values.cmd, push: values.push });
+  else if (cmd === 'brief' && b === undefined) cmdBrief(a);
   else if (cmd === 'claim' && one) cmdClaim(a, { noWait: values['no-wait'] });
   else if (cmd === 'release' && one) cmdRelease(a);
   else if (cmd === 'locks') cmdLocks();

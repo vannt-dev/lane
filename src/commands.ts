@@ -4,8 +4,9 @@ import { spawn } from 'node:child_process';
 import { errCode, git, gitTry, runLive, sleepMs, tryRun } from './sh.ts';
 import { Locks, type Holder } from './locks.ts';
 import {
-  checksState, cleanable, installCommands, isInside, lanePath, parseWorktrees, pickBase, repoSlug,
-  samePath, type ChecksState, type Check, type Worktree,
+  briefText, checkCommands, checksState, cleanable, HEAVY_HOOKS, HOOK_NAMES, hookWrapper, installCommands,
+  isInside, lanePath, listLines, LOCKFILES, parseWorktrees, pickBase, repoSlug, samePath,
+  type ChecksState, type Check, type Worktree,
 } from './core.ts';
 
 export const config = {
@@ -53,12 +54,10 @@ function baseBranch(dir: string): string {
   return pickBase({ hasDevelop, originHead });
 }
 
-function copyList(dir: string): string[] {
-  const extra = path.join(dir, '.lanecopy');
-  const more = fs.existsSync(extra)
-    ? fs.readFileSync(extra, 'utf8').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
-    : [];
-  return [...COPY_DEFAULT, ...more];
+/** An untracked list file at the root of the main clone (`.lanecopy`, `.lanecheck`). */
+function readListFile(dir: string, name: string): string[] {
+  const file = path.join(dir, name);
+  return fs.existsSync(file) ? listLines(fs.readFileSync(file, 'utf8')) : [];
 }
 
 function isTracked(dir: string, file: string): boolean {
@@ -68,57 +67,116 @@ function isTracked(dir: string, file: string): boolean {
 export interface NewOptions {
   base?: string;
   branch?: string;
+  /** Open the lane on an existing pull request's branch. */
+  pr?: number;
   install: boolean;
   open: boolean;
 }
 
-export function cmdNew(repo: string, task: string, opts: NewOptions): void {
-  const dir = repoDir(repo);
-  const branch = opts.branch || task;
-  const dest = lanePath(config.root, repo, task);
-  if (fs.existsSync(dest)) {
-    if (fs.readdirSync(dest).length > 0) throw new Error(`${dest} already exists`);
-    fs.rmdirSync(dest);
+function freeDest(dest: string): void {
+  if (!fs.existsSync(dest)) return;
+  if (fs.readdirSync(dest).length > 0) throw new Error(`${dest} already exists`);
+  fs.rmdirSync(dest);
+}
+
+const branchExists = (dir: string, branch: string) =>
+  gitTry(dir, 'rev-parse', '-q', '--verify', `refs/heads/${branch}`) !== null;
+
+/** Checks out a pull request's branch in a new lane: its own branch when it is in this repo. */
+function addPrWorktree(dir: string, repo: string, pr: number, dest: string): void {
+  const url = gitTry(dir, 'remote', 'get-url', 'origin');
+  const slug = url && repoSlug(url);
+  if (!slug) throw new Error(`${repo}: --pr needs a GitHub origin`);
+  const out = tryRun('gh', ['pr', 'view', String(pr), '-R', slug, '--json', 'headRefName,isCrossRepository,state']);
+  if (!out) throw new Error(`cannot read pull request #${pr} of ${slug} (is gh logged in?)`);
+  const info = JSON.parse(out) as { headRefName: string; isCrossRepository: boolean; state: string };
+  if (info.isCrossRepository) {
+    // A fork's branch cannot be pushed from here: take the pull request's commits on a local branch.
+    const local = `pr-${pr}`;
+    if (branchExists(dir, local)) throw new Error(`branch ${local} already exists in ${repo}`);
+    git(dir, 'fetch', 'origin', '--quiet', `pull/${pr}/head:${local}`);
+    git(dir, 'worktree', 'add', dest, local);
+    log(`lane ${path.basename(dest)}: pull request #${pr} from a fork, on local branch ${local} (pushing needs the fork)`);
+    return;
   }
-  if (gitTry(dir, 'rev-parse', '-q', '--verify', `refs/heads/${branch}`) !== null)
-    throw new Error(`branch ${branch} already exists in ${repo}; pick another task name or --branch`);
+  const branch = info.headRefName;
+  if (branchExists(dir, branch)) throw new Error(`branch ${branch} is already checked out or exists in ${repo}`);
+  git(dir, 'fetch', 'origin', '--quiet', branch);
+  git(dir, 'worktree', 'add', '--track', '-b', branch, dest, `origin/${branch}`);
+  log(`lane ${path.basename(dest)}: pull request #${pr} (${info.state.toLowerCase()}) on its branch ${branch}`);
+}
+
+export function cmdNew(repo: string, task: string | undefined, opts: NewOptions): void {
+  const dir = repoDir(repo);
+  const name = task ?? (opts.pr !== undefined ? `pr-${opts.pr}` : undefined);
+  if (!name) throw new Error('lane new needs a task name, or --pr <number>');
+  const dest = lanePath(config.root, repo, name);
+  freeDest(dest);
 
   log(`fetching ${repo}...`);
   git(dir, 'fetch', 'origin', '--prune', '--quiet');
-  const base = opts.base || baseBranch(dir);
-  if (gitTry(dir, 'rev-parse', '-q', '--verify', `refs/remotes/origin/${branch}`) !== null)
-    log(`note: origin/${branch} already exists; the lane starts from ${base}, not from it`);
-
   fs.mkdirSync(config.root, { recursive: true });
-  // --no-track: the new branch must not push into the base branch by accident.
-  git(dir, 'worktree', 'add', '--no-track', '-b', branch, dest, `origin/${base}`);
-  log(`lane ${path.basename(dest)}: branch ${branch} from origin/${base}`);
+  if (opts.pr !== undefined) {
+    addPrWorktree(dir, repo, opts.pr, dest);
+  } else {
+    const branch = opts.branch || name;
+    if (branchExists(dir, branch))
+      throw new Error(`branch ${branch} already exists in ${repo}; pick another task name or --branch`);
+    const base = opts.base || baseBranch(dir);
+    if (gitTry(dir, 'rev-parse', '-q', '--verify', `refs/remotes/origin/${branch}`) !== null)
+      log(`note: origin/${branch} already exists; the lane starts from ${base}, not from it`);
+    // --no-track: the new branch must not push into the base branch by accident.
+    git(dir, 'worktree', 'add', '--no-track', '-b', branch, dest, `origin/${base}`);
+    log(`lane ${path.basename(dest)}: branch ${branch} from origin/${base}`);
+  }
 
+  prepare(dir, dest, { install: opts.install });
+  writeLaneNotes(dest);
+  wrapHeavyHooks(dir, dest);
+
+  if (opts.open) openClaude(dest);
+  else log(`\nnext: cd ${dest} && claude      (or: lane new ... --open; agents: lane brief ${path.basename(dest)})`);
+}
+
+/** Submodules, untracked local files and dependencies: what a fresh worktree lacks. */
+function prepare(dir: string, dest: string, opts: { install: boolean }): void {
   if (fs.existsSync(path.join(dest, '.gitmodules'))) {
     log('fetching submodules...');
     if (!runLive('git submodule update --init --recursive', dest))
       log('WARNING: submodules did not load (private core needs access); the build may fail');
   }
-
-  for (const file of copyList(dir)) {
+  for (const file of [...COPY_DEFAULT, ...readListFile(dir, '.lanecopy')]) {
     const from = path.join(dir, file);
     if (!fs.existsSync(from) || !fs.statSync(from).isFile() || isTracked(dir, file)) continue;
     fs.mkdirSync(path.dirname(path.join(dest, file)), { recursive: true });
     fs.copyFileSync(from, path.join(dest, file));
     log(`copied ${file}`);
   }
+  if (opts.install) install(dest);
+}
 
-  writeLaneNotes(dest);
-
-  if (opts.install) {
-    for (const c of installCommands(fs.readdirSync(dest))) {
-      log(`> ${c}`);
-      if (!runLive(c, dest)) throw new Error(`"${c}" failed in ${dest}; the lane is kept, fix and rerun it there`);
-    }
+function install(dest: string): void {
+  for (const c of installCommands(fs.readdirSync(dest))) {
+    log(`> ${c}`);
+    if (!runLive(c, dest)) throw new Error(`"${c}" failed in ${dest}; the lane is kept, fix and rerun it there`);
   }
+}
 
-  if (opts.open) openClaude(dest);
-  else log(`\nnext: cd ${dest} && claude      (or: lane new ... --open)`);
+/**
+ * Gives the lane its own hooks folder, where a heavy hook (pre-push runs the whole test suite)
+ * waits for a build slot and every other hook runs as before. Only this worktree uses it.
+ */
+function wrapHeavyHooks(dir: string, dest: string): void {
+  const original = path.resolve(dest, git(dest, 'rev-parse', '--git-path', 'hooks'));
+  if (!fs.existsSync(original)) return;
+  const hooks = fs.readdirSync(original).filter((h) => HOOK_NAMES.includes(h) && fs.statSync(path.join(original, h)).isFile());
+  if (!hooks.some((h) => HEAVY_HOOKS.includes(h))) return;
+  const own = path.resolve(dest, git(dest, 'rev-parse', '--git-dir'), 'lane-hooks');
+  fs.mkdirSync(own, { recursive: true });
+  for (const h of hooks) fs.writeFileSync(path.join(own, h), hookWrapper(h, path.join(original, h)), { mode: 0o755 });
+  git(dir, 'config', 'extensions.worktreeConfig', 'true');
+  git(dest, 'config', '--worktree', 'core.hooksPath', own);
+  log(`hooks: ${hooks.filter((h) => HEAVY_HOOKS.includes(h)).join(', ')} wait for a build slot in this lane`);
 }
 
 function openClaude(dir: string): void {
@@ -281,6 +339,17 @@ export function cmdClean(opts: { yes: boolean }): void {
   if (!opts.yes) return log(`\n${count} item(s) can go. Run again with --yes to remove them.`);
   for (const l of ready) removeLane(l);
   for (const dir of empty) if (rmLaneFolder(dir)) log(`removed empty folder ${path.basename(dir)}`);
+  for (const dir of new Set(ready.map((l) => l.repoDir))) pullMainClone(dir);
+}
+
+/** After merged lanes go, bring the main clone up to date, unless it holds work of its own. */
+function pullMainClone(dir: string): void {
+  const name = path.basename(dir);
+  if ((gitTry(dir, 'status', '--porcelain') ?? 'x') !== '') return log(`${name}: main clone has local changes; not pulled`);
+  if (gitTry(dir, 'rev-parse', '--abbrev-ref', '@{upstream}') === null) return;
+  const before = gitTry(dir, 'rev-parse', 'HEAD');
+  if (gitTry(dir, 'pull', '--ff-only', '--quiet') === null) return log(`${name}: main clone could not fast-forward; pull it by hand`);
+  if (gitTry(dir, 'rev-parse', 'HEAD') !== before) log(`${name}: main clone pulled to ${gitTry(dir, 'log', '-1', '--format=%h %s')}`);
 }
 
 export function cmdRemove(name: string, opts: { force: boolean }): void {
@@ -354,4 +423,191 @@ export function cmdLocks(): void {
 
 export function cmdWith(resource: string, slots: number, argv: readonly string[]): number {
   return locks().withSlot(resource, slots, here(), argv);
+}
+
+// ---- verify, sync, brief: working with several lanes of one repository ----
+
+/** The lanes of one repository that are on a branch (a detached checkout is not a task). */
+function repoLanes(repo: string): Lane[] {
+  return findLanes().filter((l) => l.repo === repo && l.branch);
+}
+
+/** Check commands for a checkout: --cmd, else the main clone's `.lanecheck`, else detected. */
+function checksFor(mainClone: string, checkout: string, custom?: readonly string[]): string[] {
+  const files = fs.readdirSync(checkout);
+  let scripts: Record<string, string> | undefined;
+  try {
+    scripts = (JSON.parse(fs.readFileSync(path.join(checkout, 'package.json'), 'utf8')) as { scripts?: Record<string, string> }).scripts;
+  } catch {}
+  const listed = custom?.length ? custom : readListFile(mainClone, '.lanecheck');
+  return checkCommands({ files, scripts, custom: listed });
+}
+
+/** Runs each check in a checkout, each holding a build slot; stops at the first failure. */
+function runChecks(checkout: string, cmds: readonly string[], holder: Holder): { ok: boolean; failed?: string } {
+  for (const c of cmds) {
+    log(`> ${c}   (in ${path.basename(checkout)})`);
+    if (locks().withSlot('build', 2, holder, [c], { cwd: checkout }) !== 0) return { ok: false, failed: c };
+  }
+  return { ok: true };
+}
+
+/** Git with the repository's hooks off: lane's own merges and rebases are not commits for review. */
+const NO_HOOKS = ['-c', 'core.hooksPath=.lane-no-hooks', '-c', 'user.name=lane', '-c', 'user.email=lane@localhost'];
+
+function conflictedFiles(checkout: string): string[] {
+  return (gitTry(checkout, 'diff', '--name-only', '--diff-filter=U') ?? '').split(/\r?\n/).filter(Boolean);
+}
+
+export interface CheckOptions {
+  cmds?: string[];
+  keep: boolean;
+}
+
+/**
+ * Merges every open lane of a repository together on top of its base branch, in a throwaway
+ * checkout, and runs the checks there. Lanes can merge cleanly as text and still break each
+ * other; this finds that before the first one is merged.
+ */
+export function cmdVerify(repo: string, opts: CheckOptions): number {
+  const dir = repoDir(repo);
+  const lanes = repoLanes(repo);
+  if (lanes.length === 0) {
+    log(`${repo} has no lanes`);
+    return 0;
+  }
+  log(`fetching ${repo}...`);
+  git(dir, 'fetch', 'origin', '--prune', '--quiet');
+  const base = baseBranch(dir);
+  const dest = lanePath(config.root, repo, 'verify');
+  freeDest(dest);
+  git(dir, 'worktree', 'add', '--detach', dest, `origin/${base}`);
+  let ok = false;
+  try {
+    const rows: string[][] = [];
+    const merged: string[] = [];
+    for (const l of lanes) {
+      if (gitTry(dest, ...NO_HOOKS, 'merge', '--no-ff', '--no-edit', l.branch) !== null) {
+        merged.push(l.branch);
+        rows.push([l.name, l.branch, 'merged']);
+        continue;
+      }
+      const files = conflictedFiles(dest);
+      gitTry(dest, 'merge', '--abort');
+      rows.push([l.name, l.branch, `CONFLICT with ${merged.join(', ') || origin(base)}: ${files.join(', ') || '?'}`]);
+    }
+    printTable(['lane', 'branch', `on origin/${base}`], rows);
+    const conflicts = rows.length - merged.length;
+    if (merged.length === 0) {
+      log('\nnothing merged, nothing to check');
+      return 1;
+    }
+    prepare(dir, dest, { install: true });
+    const cmds = checksFor(dir, dest, opts.cmds);
+    if (cmds.length === 0) log('\nno checks found: add a .lanecheck file to the main clone, or pass --cmd');
+    const result = runChecks(dest, cmds, { lane: path.basename(dest), lanePath: dest });
+    ok = result.ok && conflicts === 0;
+    log(
+      result.ok
+        ? `\n${merged.length} lane(s) together on origin/${base}: checks pass${conflicts ? `; ${conflicts} lane(s) conflict` : ''}`
+        : `\n${merged.length} lane(s) together on origin/${base}: "${result.failed}" FAILS. Each lane may pass on its own: they break each other.`,
+    );
+    return ok ? 0 : 1;
+  } finally {
+    if (opts.keep || !ok) {
+      if (opts.keep || fs.existsSync(dest)) log(`the combined checkout stays at ${dest} (remove it with: lane rm ${path.basename(dest)})`);
+    } else {
+      gitTry(dir, 'worktree', 'remove', '--force', dest);
+      if (fs.existsSync(dest)) rmLaneFolder(dest);
+      gitTry(dir, 'worktree', 'prune');
+    }
+  }
+}
+
+const origin = (base: string) => `origin/${base}`;
+
+export interface SyncOptions {
+  cmds?: string[];
+  push: boolean;
+}
+
+/**
+ * After a lane merges, moves every other open lane of the repository onto the new base branch
+ * and runs its checks again: a lane that passed before can fail on top of what just merged.
+ */
+export function cmdSync(repo: string, opts: SyncOptions): number {
+  const dir = repoDir(repo);
+  const lanes = repoLanes(repo);
+  if (lanes.length === 0) {
+    log(`${repo} has no lanes`);
+    return 0;
+  }
+  log(`fetching ${repo}...`);
+  git(dir, 'fetch', 'origin', '--prune', '--quiet');
+  const base = baseBranch(dir);
+  const rows: string[][] = [];
+  let bad = 0;
+  for (const l of lanes) {
+    const s = localState(l);
+    if (s.dirty) {
+      rows.push([l.name, `skipped: ${s.dirty} uncommitted change(s)`]);
+      continue;
+    }
+    const pr = prOf(l);
+    if (pr?.state === 'MERGED') {
+      rows.push([l.name, `skipped: PR #${pr.number} merged (lane clean removes it)`]);
+      continue;
+    }
+    if (gitTry(l.path, 'merge-base', '--is-ancestor', origin(base), 'HEAD') !== null) {
+      rows.push([l.name, `already on ${origin(base)}`]);
+      continue;
+    }
+    const before = git(l.path, 'rev-parse', 'HEAD');
+    if (gitTry(l.path, ...NO_HOOKS, 'rebase', origin(base)) === null) {
+      const files = conflictedFiles(l.path);
+      gitTry(l.path, 'rebase', '--abort');
+      rows.push([l.name, `CONFLICT, left as it was: ${files.join(', ') || '?'} (rebase by hand)`]);
+      bad++;
+      continue;
+    }
+    const changed = (gitTry(l.path, 'diff', '--name-only', before, 'HEAD') ?? '').split(/\r?\n/);
+    if (changed.some((f) => LOCKFILES.includes(path.basename(f)))) install(l.path);
+    const result = runChecks(l.path, checksFor(dir, l.path, opts.cmds), { lane: l.name, lanePath: l.path });
+    if (!result.ok) {
+      rows.push([l.name, `rebased; "${result.failed}" FAILS on top of ${origin(base)}`]);
+      bad++;
+      continue;
+    }
+    let note = 'rebased, checks pass';
+    if (opts.push && gitTry(l.path, 'rev-parse', '-q', '--verify', `refs/remotes/origin/${l.branch}`) !== null) {
+      note += gitTry(l.path, 'push', '--force-with-lease', 'origin', l.branch) !== null ? ', pushed' : ', PUSH FAILED';
+    } else if (gitTry(l.path, 'rev-parse', '-q', '--verify', `refs/remotes/origin/${l.branch}`) !== null) {
+      note += '; push with --force-with-lease (or lane sync --push)';
+    }
+    rows.push([l.name, note]);
+  }
+  printTable(['lane', `onto ${origin(base)}`], rows);
+  return bad ? 1 : 0;
+}
+
+/** Prints what an agent working in a lane must know (the lane named, or the one this runs in). */
+export function cmdBrief(name?: string): void {
+  const lanes = findLanes();
+  const cwd = process.cwd();
+  const lane = name
+    ? lanes.find((l) => l.name === name)
+    : lanes.find((l) => samePath(l.path, cwd) || isInside(cwd, l.path));
+  if (!lane) throw new Error(name ? `no lane called ${name} (see: lane list --local)` : 'not inside a lane; name one');
+  const others = lanes.filter((l) => l.repo === lane.repo && l.name !== lane.name).map((l) => l.path);
+  process.stdout.write(
+    briefText({
+      lane: lane.name,
+      path: lane.path,
+      branch: lane.branch || '(detached)',
+      repo: lane.repo,
+      mainClone: lane.repoDir,
+      others,
+      checks: checksFor(lane.repoDir, lane.path),
+    }),
+  );
 }

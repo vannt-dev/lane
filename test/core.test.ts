@@ -3,8 +3,39 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import {
   slug, lanePath, pickBase, installCommands, parseWorktrees, samePath, isInside,
-  checksState, cleanable, repoSlug,
+  checksState, cleanable, repoSlug, listLines, checkCommands, hookWrapper, briefText,
 } from '../src/core.ts';
+
+test('listLines drops blanks and comments', () => {
+  assert.deepEqual(listLines('# checks\nnpm test\r\n\n  node x.js  \n'), ['npm test', 'node x.js']);
+});
+
+test('checkCommands: custom first, else what the checkout has', () => {
+  assert.deepEqual(checkCommands({ files: ['package.json'], scripts: { test: 'x' }, custom: ['make check'] }), ['make check']);
+  assert.deepEqual(
+    checkCommands({ files: ['package.json', 'pnpm-lock.yaml'], scripts: { build: 'b', test: 't', typecheck: 'c' } }),
+    ['pnpm run typecheck', 'pnpm run test'],
+  );
+  assert.deepEqual(checkCommands({ files: ['package.json'], scripts: { lint: 'l' } }), ['npm run lint']);
+  assert.deepEqual(checkCommands({ files: ['pubspec.yaml', 'Cargo.toml'] }), ['flutter analyze', 'flutter test', 'cargo test']);
+  assert.deepEqual(checkCommands({ files: ['README.md'] }), []);
+});
+
+test('hookWrapper sends only heavy hooks through a build slot', () => {
+  assert.match(hookWrapper('pre-push', 'C:\\r\\.git\\hooks\\pre-push'), /exec lane with build -- sh "C:\/r\/\.git\/hooks\/pre-push" "\$@"/);
+  assert.match(hookWrapper('commit-msg', '/r/.git/hooks/commit-msg'), /^#!\/bin\/sh\n.*\nexec "\/r\/\.git\/hooks\/commit-msg" "\$@"\n$/);
+});
+
+test('briefText lists the lane, the places to stay out of and the checks', () => {
+  const text = briefText({
+    lane: 'rk-a', path: 'F:\\wt\\rk-a', branch: 'feat/a', repo: 'rk', mainClone: 'F:\\ai\\rk',
+    others: ['F:\\wt\\rk-b'], checks: ['npm run test'],
+  });
+  assert.match(text, /`F:\/wt\/rk-a`, branch `feat\/a` of rk/);
+  assert.match(text, /`F:\/ai\/rk` or in the other lanes: `F:\/wt\/rk-b`\./);
+  assert.match(text, /Checks to pass before you push: `npm run test`\./);
+  assert.doesNotMatch(briefText({ lane: 'x', path: '/x', branch: 'b', repo: 'r', mainClone: '/m', others: [], checks: [] }), /Checks/);
+});
 
 test('slug makes folder-safe names', () => {
   assert.equal(slug('fix/login bug'), 'fix-login-bug');

@@ -142,7 +142,13 @@ export class Locks {
   }
 
   /** Run a command while holding one of `slots` numbered locks (`build-1`, `build-2`, ...). */
-  withSlot(name: string, slots: number, holder: Holder, argv: readonly string[], { say = console.log as Say } = {}): number {
+  withSlot(
+    name: string,
+    slots: number,
+    holder: Holder,
+    argv: readonly string[],
+    { say = console.log as Say, cwd }: { say?: Say; cwd?: string } = {},
+  ): number {
     const names = slots > 1 ? Array.from({ length: slots }, (_, i) => `${name}-${i + 1}`) : [name];
     let got: string | undefined;
     let told = 0;
@@ -156,7 +162,7 @@ export class Locks {
       sleepMs(5000);
     }
     try {
-      return runArgv(argv);
+      return runArgv(argv, cwd);
     } finally {
       fs.rmSync(this.file(got), { force: true });
     }
@@ -168,10 +174,10 @@ export class Locks {
  * Several = run directly, so characters like > or & stay literal; Windows .cmd/.bat
  * tools (npm, flutter) cannot run without a shell, so they get one with each argument quoted.
  */
-export function runArgv(argv: readonly string[]): number {
+export function runArgv(argv: readonly string[], cwd?: string): number {
   const [cmd, ...args] = argv;
   if (cmd === undefined) throw new Error('no command given');
-  const opts = { stdio: 'inherit', windowsHide: true } as const;
+  const opts = { stdio: 'inherit', windowsHide: true, cwd } as const;
   if (args.length === 0) return spawnSync(cmd, { ...opts, shell: true }).status ?? 1;
   let r = spawnSync(cmd, args, opts);
   const code = errCode(r.error);
