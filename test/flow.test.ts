@@ -6,7 +6,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
-const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'lane-flow-')));
+// Left as os.tmpdir() spells it: on GitHub's Windows runners that is an 8.3 short name
+// (C:\Users\RUNNER~1\...) while git prints long paths, which lane has to match up.
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lane-flow-'));
 const root = path.join(tmp, 'wt');
 const repos = path.join(tmp, 'repos');
 const remotes = path.join(tmp, 'remotes');

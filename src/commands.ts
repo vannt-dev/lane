@@ -187,6 +187,19 @@ function openClaude(dir: string): void {
   log(`opened Claude Code in ${dir}`);
 }
 
+/**
+ * Whether a path is under the lane root. Git prints long paths; the root may be given in another
+ * form of the same folder (a Windows 8.3 short name such as RUNNER~1, a symlink), so compare both.
+ */
+function underRoot(p: string): boolean {
+  if (isInside(p, config.root)) return true;
+  try {
+    return isInside(p, fs.realpathSync.native(config.root));
+  } catch {
+    return false;
+  }
+}
+
 /** Every lane under the lane root, across all clones in the repos folder. */
 export function findLanes(): Lane[] {
   const lanes: Lane[] = [];
@@ -197,7 +210,7 @@ export function findLanes(): Lane[] {
     const out = gitTry(dir, 'worktree', 'list', '--porcelain');
     if (!out) continue;
     for (const w of parseWorktrees(out)) {
-      if (!isInside(w.path, config.root)) continue;
+      if (!underRoot(w.path)) continue;
       lanes.push({ repo: name, repoDir: dir, ...w, name: path.basename(w.path) });
     }
   }
@@ -292,7 +305,7 @@ function rmLaneFolder(dir: string): boolean {
 
 function removeLane(lane: Lane): void {
   if (samePath(lane.path, lane.repoDir)) throw new Error('refusing to remove a main clone');
-  if (!isInside(lane.path, config.root)) throw new Error(`${lane.path} is not under ${config.root}`);
+  if (!underRoot(lane.path)) throw new Error(`${lane.path} is not under ${config.root}`);
   gitTry(lane.repoDir, 'worktree', 'remove', '--force', lane.path);
   const folderGone = !fs.existsSync(lane.path) || rmLaneFolder(lane.path);
   gitTry(lane.repoDir, 'worktree', 'prune');
@@ -306,8 +319,9 @@ function leftovers(lanes: Lane[]): string[] {
   if (!fs.existsSync(config.root)) return [];
   return fs.readdirSync(config.root, { withFileTypes: true })
     .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
-    .map((e) => path.join(config.root, e.name))
-    .filter((dir) => !lanes.some((l) => samePath(l.path, dir)));
+    // Lanes are direct children of the root: compare names, the root may be spelled another way.
+    .filter((e) => !lanes.some((l) => path.basename(l.path).toLowerCase() === e.name.toLowerCase()))
+    .map((e) => path.join(config.root, e.name));
 }
 
 function keepReason(s: LocalState, pr: Pr | null): string {
