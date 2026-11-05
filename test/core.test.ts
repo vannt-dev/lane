@@ -67,6 +67,13 @@ test('cleanable needs a merged PR and a clean, pushed tree', () => {
   assert.ok(!cleanable({ prState: 'MERGED', dirty: 0, unpushed: true }));
 });
 
+test('cleanable accepts a squash-merged lane still on the merged commit', () => {
+  assert.ok(cleanable({ prState: 'MERGED', dirty: 0, unpushed: true, atPrHead: true }));
+  assert.ok(!cleanable({ prState: 'MERGED', dirty: 0, unpushed: true, atPrHead: false }));
+  assert.ok(!cleanable({ prState: 'MERGED', dirty: 1, unpushed: true, atPrHead: true }));
+  assert.ok(!cleanable({ prState: 'OPEN', dirty: 0, unpushed: true, atPrHead: true }));
+});
+
 test('repoSlug reads https and ssh remotes', () => {
   assert.equal(repoSlug('https://github.com/vannt-dev/junto.git'), 'vannt-dev/junto');
   assert.equal(repoSlug('git@github.com:vannt-dev/aegis-net.git\n'), 'vannt-dev/aegis-net');

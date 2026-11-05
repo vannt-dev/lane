@@ -30,6 +30,8 @@ interface Pr {
   number: number;
   state: string;
   checks: ChecksState;
+  /** The last commit of the PR's branch. */
+  head: string;
 }
 
 const log = (msg: string) => console.log(msg);
@@ -158,10 +160,12 @@ function prOf(lane: Lane): Pr | null {
   const slug = url && repoSlug(url);
   if (!slug || !lane.branch) return null;
   const out = tryRun('gh', ['pr', 'list', '-R', slug, '--head', lane.branch, '--state', 'all', '--limit', '1',
-    '--json', 'number,state,statusCheckRollup']);
+    '--json', 'number,state,statusCheckRollup,headRefOid']);
   if (!out) return null;
-  const [pr] = JSON.parse(out) as { number: number; state: string; statusCheckRollup: Check[] }[];
-  return pr ? { number: pr.number, state: pr.state, checks: checksState(pr.statusCheckRollup) } : null;
+  const [pr] = JSON.parse(out) as { number: number; state: string; statusCheckRollup: Check[]; headRefOid: string }[];
+  return pr
+    ? { number: pr.number, state: pr.state, checks: checksState(pr.statusCheckRollup), head: pr.headRefOid }
+    : null;
 }
 
 export function cmdList(opts: { local: boolean }): void {
@@ -260,7 +264,8 @@ export function cmdClean(opts: { yes: boolean }): void {
   for (const l of lanes) {
     const s = localState(l);
     const pr = prOf(l);
-    const ok = s.missing || cleanable({ prState: pr?.state, dirty: s.dirty, unpushed: s.unpushed });
+    const atPrHead = Boolean(pr?.head) && pr?.head === l.head;
+    const ok = s.missing || cleanable({ prState: pr?.state, dirty: s.dirty, unpushed: s.unpushed, atPrHead });
     const why = s.missing ? 'folder missing' : ok ? `PR #${pr?.number} merged` : keepReason(s, pr);
     log(`${ok ? 'remove' : 'keep  '}  ${l.name}  (${why})`);
     if (ok) ready.push(l);

@@ -93,9 +93,18 @@ export function checksState(rollup: readonly Check[] | null | undefined): Checks
   return 'pass';
 }
 
-/** `lane clean` removes a lane only when its PR is merged and nothing is left uncommitted. */
-export function cleanable(s: { prState: string | undefined; dirty: number; unpushed: boolean }): boolean {
-  return s.prState === 'MERGED' && s.dirty === 0 && !s.unpushed;
+/**
+ * `lane clean` removes a lane only when its PR is merged and nothing would be lost. After a squash
+ * merge GitHub deletes the branch, so the lane's commits are on no remote any more; they are safe
+ * when the lane still sits on the commit the PR was merged from.
+ */
+export function cleanable(s: {
+  prState: string | undefined;
+  dirty: number;
+  unpushed: boolean;
+  atPrHead?: boolean;
+}): boolean {
+  return s.prState === 'MERGED' && s.dirty === 0 && (!s.unpushed || s.atPrHead === true);
 }
 
 /** `owner/name` from an origin URL (https or ssh). */
