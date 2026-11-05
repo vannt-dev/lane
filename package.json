@@ -1,0 +1,16 @@
+{
+  "name": "lane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One git worktree per task, so tasks in one repo can run side by side",
+  "type": "module",
+  "bin": {
+    "lane": "bin/lane.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
