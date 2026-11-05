@@ -40,10 +40,17 @@ test('parseWorktrees reads porcelain output', () => {
   assert.equal(w[2]?.detached, true);
 });
 
-test('path helpers ignore case and slash style', () => {
+test('path helpers ignore case and slash style (Windows)', { skip: process.platform !== 'win32' }, () => {
   assert.ok(samePath('F:/wt/a', 'f:\\WT\\a\\'));
   assert.ok(isInside('F:/wt/junto-x', 'F:\\wt'));
   assert.ok(!isInside('F:/wtx/a', 'F:/wt'));
+});
+
+test('path helpers compare whole folder names', () => {
+  const root = path.resolve('wt');
+  assert.ok(samePath(path.join(root, 'a'), path.join(root, 'a') + path.sep));
+  assert.ok(isInside(path.join(root, 'junto-x'), root));
+  assert.ok(!isInside(path.resolve('wtx', 'a'), root));
 });
 
 test('checksState summarises a rollup', () => {
