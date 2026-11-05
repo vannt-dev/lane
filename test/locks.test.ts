@@ -3,17 +3,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Locks, isStale, runArgv } from '../src/locks.mjs';
+import { Locks, isStale, runArgv } from '../src/locks.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'lane-locks-'));
 
 test('isStale: pid locks follow the process, claim locks follow the lane and age', () => {
   const base = { maxAgeMs: 1000, laneExists: () => true };
-  assert.equal(isStale({ pid: 1 }, { ...base, alive: () => true }), false);
-  assert.equal(isStale({ pid: 1 }, { ...base, alive: () => false }), true);
-  assert.equal(isStale({ lanePath: 'x', since: 0 }, { ...base, now: 500 }), false);
-  assert.equal(isStale({ lanePath: 'x', since: 0 }, { ...base, now: 5000 }), true);
-  assert.equal(isStale({ lanePath: 'x', since: 0 }, { ...base, now: 1, laneExists: () => false }), true);
+  assert.equal(isStale({ lane: 'a', since: 0, pid: 1 }, { ...base, alive: () => true }), false);
+  assert.equal(isStale({ lane: 'a', since: 0, pid: 1 }, { ...base, alive: () => false }), true);
+  assert.equal(isStale({ lane: 'a', lanePath: 'x', since: 0 }, { ...base, now: 500 }), false);
+  assert.equal(isStale({ lane: 'a', lanePath: 'x', since: 0 }, { ...base, now: 5000 }), true);
+  assert.equal(isStale({ lane: 'a', lanePath: 'x', since: 0 }, { ...base, now: 1, laneExists: () => false }), true);
 });
 
 test('a claim blocks a second lane until released', () => {
@@ -33,7 +33,7 @@ test('a claim whose lane folder is gone is taken over', () => {
   const locks = new Locks(root);
   locks.tryTake('emulator', { lane: 'old', lanePath: path.join(root, 'gone') });
   assert.equal(locks.tryTake('emulator', { lane: 'new', lanePath: root }), null);
-  assert.equal(locks.read('emulator').lane, 'new');
+  assert.equal(locks.read('emulator')?.lane, 'new');
 });
 
 test('withSlot runs the command and frees the slot', () => {

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdNew, cmdList, cmdClean, cmdRemove, cmdClaim, cmdRelease, cmdLocks, cmdWith, config,
-} from '../src/commands.mjs';
+  cmdClaim, cmdClean, cmdList, cmdLocks, cmdNew, cmdRelease, cmdRemove, cmdWith, config,
+} from '../src/commands.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
 
@@ -43,27 +43,35 @@ const { values, positionals } = parseArgs({
   },
 });
 
-const [cmd, ...args] = positionals;
-try {
-  if (values.help || !cmd) console.log(HELP);
-  else if (cmd === 'new' && args.length === 2)
-    cmdNew(args[0], args[1], { base: values.base, branch: values.branch, install: !values['no-install'], open: values.open });
-  else if (cmd === 'list') cmdList({ local: values.local });
+function main(): number {
+  const [cmd, a, b, ...extra] = positionals;
+  const one = a !== undefined && b === undefined;
+  if (values.help || !cmd) {
+    console.log(HELP);
+    return 0;
+  }
+  if (cmd === 'new' && a !== undefined && b !== undefined && extra.length === 0) {
+    cmdNew(a, b, { base: values.base, branch: values.branch, install: !values['no-install'], open: values.open });
+  } else if (cmd === 'list') cmdList({ local: values.local });
   else if (cmd === 'clean') cmdClean({ yes: values.yes });
-  else if (cmd === 'rm' && args.length === 1) cmdRemove(args[0], { force: values.force });
-  else if (cmd === 'claim' && args.length === 1) cmdClaim(args[0], { noWait: values['no-wait'] });
-  else if (cmd === 'release' && args.length === 1) cmdRelease(args[0]);
+  else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
+  else if (cmd === 'claim' && one) cmdClaim(a, { noWait: values['no-wait'] });
+  else if (cmd === 'release' && one) cmdRelease(a);
   else if (cmd === 'locks') cmdLocks();
-  else if (cmd === 'with' && args.length === 1 && tail.length) {
-    const slots = Number(values.slots ?? (args[0] === 'build' ? 2 : 1));
+  else if (cmd === 'with' && one && tail.length > 0) {
+    const slots = Number(values.slots ?? (a === 'build' ? 2 : 1));
     if (!Number.isInteger(slots) || slots < 1) throw new Error('--slots must be a whole number >= 1');
-    process.exitCode = cmdWith(args[0], slots, tail);
-  }
-  else {
+    return cmdWith(a, slots, tail);
+  } else {
     console.error(HELP);
-    process.exitCode = 2;
+    return 2;
   }
+  return 0;
+}
+
+try {
+  process.exitCode = main();
 } catch (e) {
-  console.error(`lane: ${e.message}`);
+  console.error(`lane: ${e instanceof Error ? e.message : String(e)}`);
   process.exitCode = 1;
 }

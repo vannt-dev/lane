@@ -11,10 +11,16 @@ PR and CI, safe clean-up, and turns for the things only one lane can use at a ti
 ## Install
 
 ```sh
-cd F:/ai-agent/lane && npm link    # puts `lane` on PATH
+git clone https://github.com/vannt-dev/lane && cd lane
+npm install && npm link    # puts `lane` on PATH
 ```
 
-Node 22+, git, and `gh` (logged in) for PR and CI state.
+Node 22.18+, git, and `gh` (logged in) for PR and CI state.
+
+Written in TypeScript and run as is: Node strips the types, so there is no build step.
+`npm install` only brings the type checker. Install from a clone with `npm link` as above:
+Node does not run `.ts` files that sit inside `node_modules`, so `npm install -g` from the
+registry or a git URL would not work.
 
 ## Commands
 
@@ -49,8 +55,19 @@ Node 22+, git, and `gh` (logged in) for PR and CI state.
   (pub cache on C:, checkout on F:); a lane is on F: too.
 - Removing a lane falls back to a `\\?\` path delete when git hits Windows' path limit.
 
-## Tests
+## Development
 
 ```sh
-npm test
+npm run typecheck   # tsc --noEmit, strict
+npm test            # node --test, runs the .ts tests directly
 ```
+
+CI runs both on Windows and Ubuntu, on the oldest supported Node (22.18).
+
+| File | What is in it |
+| --- | --- |
+| `bin/lane.ts` | Command line parsing |
+| `src/commands.ts` | The commands (git, gh, file system) |
+| `src/locks.ts` | Claims and build slots |
+| `src/core.ts` | Pure helpers (names, base branch, install command, PR state) |
+| `src/sh.ts` | Running programs |

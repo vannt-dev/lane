@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev:
+        patterns: ['*']
+    ignore:
+      # Types follow the oldest supported Node (engines >=22.18).
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']

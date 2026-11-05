@@ -4,7 +4,7 @@ import path from 'node:path';
 import {
   slug, lanePath, pickBase, installCommands, parseWorktrees, samePath, isInside,
   checksState, cleanable, repoSlug,
-} from '../src/core.mjs';
+} from '../src/core.ts';
 
 test('slug makes folder-safe names', () => {
   assert.equal(slug('fix/login bug'), 'fix-login-bug');
@@ -36,8 +36,8 @@ test('parseWorktrees reads porcelain output', () => {
   ].join('\n');
   const w = parseWorktrees(text);
   assert.equal(w.length, 3);
-  assert.equal(w[1].branch, 'feat/x');
-  assert.equal(w[2].detached, true);
+  assert.equal(w[1]?.branch, 'feat/x');
+  assert.equal(w[2]?.detached, true);
 });
 
 test('path helpers ignore case and slash style', () => {
