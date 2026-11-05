@@ -143,7 +143,8 @@ test('brief names the lane, its branch and the lanes to keep out of', () => {
   laneWith('seven', 'feat-h', 'h.txt', 'h\n');
   laneWith('seven', 'feat-i', 'i.txt', 'i\n');
   const { out } = capture(() => cmdBrief('seven-feat-h'));
-  const p = (s: string) => s.replace(/\\/g, '/');
+  // The brief prints paths as git does (long form), so compare with the real path.
+  const p = (s: string) => fs.realpathSync.native(s).replace(/\\/g, '/');
   assert.match(out, /branch `feat-h`/);
   assert.ok(out.includes(p(path.join(root, 'seven-feat-h'))));
   assert.ok(out.includes(p(path.join(root, 'seven-feat-i'))));
