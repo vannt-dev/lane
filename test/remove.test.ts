@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { rmFolder } from '../src/commands.ts';
+import { rmFolder } from '../src/fsutil.ts';
 
 test('rmFolder really deletes a folder tree (long-path form on Windows)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lane-rm-'));

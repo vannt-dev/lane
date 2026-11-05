@@ -1,22 +1,29 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdBrief, cmdClaim, cmdClean, cmdList, cmdLocks, cmdNew, cmdRelease, cmdRemove, cmdSync, cmdVerify, cmdWith,
-  config,
-} from '../src/commands.ts';
+  cmdBrief, cmdClaim, cmdClean, cmdDone, cmdList, cmdLocks, cmdNew, cmdPort, cmdRelease, cmdRemove, cmdSync,
+  cmdVerify, cmdWith, config,
+} from '../src/index.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
 
+  Lanes are slots: reusable worktrees ${config.root}/<repo>-<n> (up to ${config.maxSlots} per repo),
+  held with git worktree lock while a task uses them and given back afterwards, folder,
+  dependencies and build caches kept for the next task.
+
   lane new <repo> <task> [--base B] [--branch NAME] [--no-install] [--open]
-      New worktree ${config.root}/<repo>-<task> on a new branch (default: the task name)
-      from origin/develop if it exists, else the default branch. Loads submodules,
-      copies untracked .env-type files, installs dependencies, --open starts Claude Code.
-      A pre-push hook in the lane waits for a build slot.
-  lane new <repo> --pr <n>   A lane on an existing pull request's branch (to test or finish it)
-  lane list [--local]        Every lane: branch, local changes, PR and CI (--local: no GitHub calls)
-  lane clean [--yes]         Lanes whose PR is merged and tree is clean; --yes removes them and
-                             pulls the main clone
-  lane rm <lane> [--force]   Remove one lane (--force drops uncommitted/unpushed work)
+      Take a slot for a task: the one it had before, else a free one, else a new one.
+      New branch (default: the task name) from origin/develop if it exists, else the default
+      branch. Loads submodules, copies untracked .env-type files, installs dependencies only
+      when the lockfiles changed, --open starts Claude Code. Its pre-push hook waits for a
+      build slot.
+  lane new <repo> --pr <n>   A slot on an existing pull request's branch (to test or finish it)
+  lane done [<lane>] [--force]
+                             Give the slot back once its work is pushed (or the PR merged)
+  lane list [--local]        Every lane: held/free, branch, local changes, PR and CI
+  lane clean [--yes]         Give back the slots whose PR merged; --yes does it and pulls the main clone
+  lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work)
+  lane port <usual port>     The port for a dev server in this slot: the usual port + the slot number
 
   lane verify <repo> [--cmd C]... [--keep]
       Merge all open lanes of a repo together in a throwaway checkout and run the checks:
@@ -33,7 +40,7 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
 
   Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
   package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
-  <repo> is a folder in ${config.repos}. Env: LANE_ROOT, LANE_REPOS.`;
+  <repo> is a folder in ${config.repos}. Env: LANE_ROOT, LANE_REPOS, LANE_MAX_SLOTS.`;
 
 // Everything after "--" is the command for `lane with`, passed through untouched.
 const argv = process.argv.slice(2);
@@ -92,6 +99,12 @@ function main(): number {
   else if (cmd === 'verify' && one) return cmdVerify(a, { cmds: values.cmd, keep: values.keep });
   else if (cmd === 'sync' && one) return cmdSync(a, { cmds: values.cmd, push: values.push });
   else if (cmd === 'brief' && b === undefined) cmdBrief(a);
+  else if (cmd === 'done' && b === undefined) cmdDone(a, { force: values.force });
+  else if (cmd === 'port' && one) {
+    const base = Number(a);
+    if (!Number.isInteger(base) || base < 1 || base > 65535) throw new Error('lane port needs a port number');
+    cmdPort(base);
+  }
   else if (cmd === 'claim' && one) cmdClaim(a, { noWait: values['no-wait'] });
   else if (cmd === 'release' && one) cmdRelease(a);
   else if (cmd === 'locks') cmdLocks();

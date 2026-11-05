@@ -1,50 +1,13 @@
-// Shared things only one lane may use at a time (the Android emulator), and a cap on
-// heavy builds running at once (RAM). Locks are files under <lane root>/.locks.
+// Shared things only one lane may use at a time (the Android emulator), and a cap on heavy
+// builds running at once (RAM). Locks are files under <lane root>/.locks.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { errCode, sleepMs } from './sh.ts';
-
-/** Who holds a lock: a lane, plus a pid when the lock lives only as long as a process. */
-export interface Holder {
-  lane: string;
-  lanePath?: string;
-  pid?: number;
-}
-
-export interface Lock extends Holder {
-  since: number;
-}
-
-export interface LockInfo extends Partial<Lock> {
-  name: string;
-  stale: boolean;
-}
+import { isStale, type Holder, type Lock, type LockInfo } from './lock-state.ts';
+import { errCode, runArgv, sleepMs } from './proc.ts';
 
 type Say = (msg: string) => void;
 
-export function pidAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return errCode(e) === 'EPERM';
-  }
-}
-
-/**
- * Whether an existing lock no longer counts. A `with` lock dies with its process;
- * a `claim` lock (held across many commands) dies when its lane is gone or it is too old.
- */
-export function isStale(
-  lock: Lock,
-  opts: { now?: number; maxAgeMs: number; laneExists: (p: string) => boolean; alive?: (pid: number) => boolean },
-): boolean {
-  const { now = Date.now(), maxAgeMs, laneExists, alive = pidAlive } = opts;
-  if (lock.pid) return !alive(lock.pid);
-  if (lock.lanePath && !laneExists(lock.lanePath)) return true;
-  return now - lock.since > maxAgeMs;
-}
+const BUSY_CODES = ['EPERM', 'EBUSY', 'EACCES'];
 
 export class Locks {
   readonly dir: string;
@@ -72,35 +35,32 @@ export class Locks {
     return isStale(lock, { maxAgeMs: this.maxAgeMs, laneExists: fs.existsSync });
   }
 
-  /** Take the lock if free (or stale). Returns null on success, else the current holder. */
+  /** An unreadable lock file is most likely being written this instant: busy until it is old. */
+  private freshUnreadable(file: string): boolean {
+    try {
+      return Date.now() - fs.statSync(file).mtimeMs < 10_000;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Takes the lock if free (or stale). Returns null on success, else the current holder. */
   tryTake(name: string, holder: Holder): Lock | null {
     fs.mkdirSync(this.dir, { recursive: true });
-    const f = this.file(name);
-    // Windows refuses a file another process is touching right now: that means busy, not error.
+    const file = this.file(name);
+    // Windows refuses a file another process is touching right now: that means busy, not error
     const busy: Lock = { lane: '?', since: Date.now() };
     for (let i = 0; i < 2; i++) {
       try {
-        fs.writeFileSync(f, JSON.stringify({ ...holder, since: Date.now() }), { flag: 'wx' });
+        fs.writeFileSync(file, JSON.stringify({ ...holder, since: Date.now() }), { flag: 'wx' });
         return null;
       } catch (e) {
-        const code = errCode(e);
-        if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') return busy;
-        if (code !== 'EEXIST') throw e;
+        if (BUSY_CODES.includes(errCode(e) ?? '')) return busy;
+        if (errCode(e) !== 'EEXIST') throw e;
         const cur = this.read(name);
-        if (cur) {
-          if (!this.stale(cur)) return cur;
-        } else {
-          // Unreadable: most likely being written this instant. Only clear it once it is old.
-          let age: number;
-          try {
-            age = Date.now() - fs.statSync(f).mtimeMs;
-          } catch {
-            continue;
-          }
-          if (age < 10_000) return busy;
-        }
+        if (cur ? !this.stale(cur) : this.freshUnreadable(file)) return cur ?? busy;
         try {
-          fs.rmSync(f, { force: true });
+          fs.rmSync(file, { force: true });
         } catch {
           return busy;
         }
@@ -109,19 +69,28 @@ export class Locks {
     return this.read(name) ?? busy;
   }
 
-  /** Wait for the lock, printing who holds it now and then. */
-  take(name: string, holder: Holder, { wait = true, pollMs = 5000, say = console.log as Say } = {}): void {
+  /** Tries `attempt` until it gives a value, saying now and then what it waits for. */
+  private waitFor<T>(attempt: () => T | null, waiting: () => string, pollMs: number, say: Say): T {
     let told = 0;
     for (;;) {
-      const cur = this.tryTake(name, holder);
-      if (!cur) return;
-      if (!wait) throw new Error(`${name} is held by ${cur.lane} since ${new Date(cur.since).toLocaleTimeString()}`);
+      const got = attempt();
+      if (got !== null) return got;
       if (Date.now() - told > 60_000) {
-        say(`waiting for ${name} (held by ${cur.lane})...`);
+        say(waiting());
         told = Date.now();
       }
       sleepMs(pollMs);
     }
+  }
+
+  /** Takes the lock, waiting while someone else holds it (unless `wait` is off). */
+  take(name: string, holder: Holder, { wait = true, pollMs = 5000, say = console.log as Say } = {}): void {
+    let cur: Lock | null = null;
+    this.waitFor(() => {
+      cur = this.tryTake(name, holder);
+      if (cur && !wait) throw new Error(`${name} is held by ${cur.lane} since ${new Date(cur.since).toLocaleTimeString()}`);
+      return cur ? null : true;
+    }, () => `waiting for ${name} (held by ${cur?.lane ?? '?'})...`, pollMs, say);
   }
 
   release(name: string, lane?: string): boolean {
@@ -135,55 +104,20 @@ export class Locks {
   list(): LockInfo[] {
     if (!fs.existsSync(this.dir)) return [];
     return fs.readdirSync(this.dir).filter((f) => f.endsWith('.json')).map((f) => {
-      const name = f.slice(0, -5);
-      const lock = this.read(name);
-      return { name, ...lock, stale: lock ? this.stale(lock) : true };
+      const lock = this.read(f.slice(0, -5));
+      return { name: f.slice(0, -5), ...lock, stale: lock ? this.stale(lock) : true };
     });
   }
 
-  /** Run a command while holding one of `slots` numbered locks (`build-1`, `build-2`, ...). */
-  withSlot(
-    name: string,
-    slots: number,
-    holder: Holder,
-    argv: readonly string[],
-    { say = console.log as Say, cwd }: { say?: Say; cwd?: string } = {},
-  ): number {
+  /** Runs a command while holding one of `slots` numbered locks (`build-1`, `build-2`, ...). */
+  withSlot(name: string, slots: number, holder: Holder, argv: readonly string[], opts: { say?: Say; cwd?: string } = {}): number {
     const names = slots > 1 ? Array.from({ length: slots }, (_, i) => `${name}-${i + 1}`) : [name];
-    let got: string | undefined;
-    let told = 0;
-    for (;;) {
-      got = names.find((n) => !this.tryTake(n, { ...holder, pid: process.pid }));
-      if (got) break;
-      if (Date.now() - told > 60_000) {
-        say(`waiting for a free ${name} slot (${slots} in use)...`);
-        told = Date.now();
-      }
-      sleepMs(5000);
-    }
+    const got = this.waitFor(() => names.find((n) => !this.tryTake(n, { ...holder, pid: process.pid })) ?? null,
+      () => `waiting for a free ${name} slot (${slots} in use)...`, 5000, opts.say ?? console.log);
     try {
-      return runArgv(argv, cwd);
+      return runArgv(argv, opts.cwd);
     } finally {
       fs.rmSync(this.file(got), { force: true });
     }
   }
-}
-
-/**
- * Run a command given as argv. One element = a command line for the shell, as typed.
- * Several = run directly, so characters like > or & stay literal; Windows .cmd/.bat
- * tools (npm, flutter) cannot run without a shell, so they get one with each argument quoted.
- */
-export function runArgv(argv: readonly string[], cwd?: string): number {
-  const [cmd, ...args] = argv;
-  if (cmd === undefined) throw new Error('no command given');
-  const opts = { stdio: 'inherit', windowsHide: true, cwd } as const;
-  if (args.length === 0) return spawnSync(cmd, { ...opts, shell: true }).status ?? 1;
-  let r = spawnSync(cmd, args, opts);
-  const code = errCode(r.error);
-  if (r.error && process.platform === 'win32' && (code === 'ENOENT' || code === 'EINVAL')) {
-    const q = (a: string) => (/^[\w./:=@+-]+$/.test(a) ? a : `"${a.replace(/"/g, '""')}"`);
-    r = spawnSync(argv.map(q).join(' '), { ...opts, shell: true });
-  }
-  return r.error ? 1 : (r.status ?? 1);
 }

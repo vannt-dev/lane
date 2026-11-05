@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Locks, isStale, runArgv } from '../src/locks.ts';
+import { isStale } from '../src/lock-state.ts';
+import { Locks } from '../src/locks.ts';
+import { runArgv } from '../src/proc.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'lane-locks-'));
 
