@@ -48,7 +48,10 @@ export function cmdNew(repo, task, opts) {
   const dir = repoDir(repo);
   const branch = opts.branch || task;
   const dest = lanePath(config.root, repo, task);
-  if (fs.existsSync(dest)) throw new Error(`${dest} already exists`);
+  if (fs.existsSync(dest)) {
+    if (fs.readdirSync(dest).length > 0) throw new Error(`${dest} already exists`);
+    fs.rmdirSync(dest);
+  }
   if (gitTry(dir, 'rev-parse', '-q', '--verify', `refs/heads/${branch}`) !== null)
     throw new Error(`branch ${branch} already exists in ${repo}; pick another task name or --branch`);
 
@@ -154,17 +157,68 @@ function printTable(head, rows) {
   for (const r of all) log(r.map((c, i) => String(c).padEnd(w[i])).join('  '));
 }
 
+/** Delete a folder; on Windows use the \\?\ form so long paths (node_modules, Gradle) work. */
+export function rmFolder(dir) {
+  const target = process.platform === 'win32' ? '\\\\?\\' + path.resolve(dir) : dir;
+  fs.rmSync(target, { recursive: true, force: true });
+}
+
+/**
+ * Delete a lane folder. A program started inside the lane can keep it open after its work
+ * is done; the usual one is the adb server (any `adb` command starts it there). Stopping it
+ * is harmless: the emulator keeps running and the next adb command starts a new server.
+ */
+function rmLaneFolder(dir) {
+  // Windows may report success yet keep a folder another program still has open (it is only
+  // marked for deletion), so check that it is gone instead of trusting the call.
+  const gone = () => {
+    try {
+      rmFolder(dir);
+    } catch (e) {
+      if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes(e.code)) throw e;
+    }
+    return !fs.existsSync(dir);
+  };
+  if (gone()) return true;
+  const adb = findAdb();
+  if (adb && run(adb, ['kill-server'], { allowFail: true }) !== null) {
+    log('the folder was in use; stopped the adb server and tried again');
+    sleepMs(1000);
+    if (gone()) return true;
+  }
+  log(`WARNING: ${dir} is still in use by a running program; close it, then run: lane clean --yes`);
+  return false;
+}
+
+/** adb is often not on PATH; look in the usual Android SDK places too. */
+function findAdb() {
+  if (run('adb', ['version'], { allowFail: true }) !== null) return 'adb';
+  const exe = process.platform === 'win32' ? 'adb.exe' : 'adb';
+  const sdks = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT,
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk')];
+  return sdks.filter(Boolean).map((s) => path.join(s, 'platform-tools', exe)).find((p) => fs.existsSync(p)) ?? null;
+}
+
+const sleepMs = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
 function removeLane(lane) {
   if (samePath(lane.path, lane.repoDir)) throw new Error('refusing to remove a main clone');
   if (!isInside(lane.path, config.root)) throw new Error(`${lane.path} is not under ${config.root}`);
-  if (gitTry(lane.repoDir, 'worktree', 'remove', '--force', lane.path) === null && fs.existsSync(lane.path)) {
-    // Long paths (node_modules, Gradle) can defeat git; the \\?\ prefix lifts Windows' limit.
-    const long = process.platform === 'win32' ? `\\\\?\\${path.resolve(lane.path)}` : lane.path;
-    fs.rmSync(long, { recursive: true, force: true });
-  }
+  gitTry(lane.repoDir, 'worktree', 'remove', '--force', lane.path);
+  const folderGone = !fs.existsSync(lane.path) || rmLaneFolder(lane.path);
   gitTry(lane.repoDir, 'worktree', 'prune');
   if (lane.branch) gitTry(lane.repoDir, 'branch', '-D', lane.branch);
-  log(`removed ${lane.name}${lane.branch ? ` and local branch ${lane.branch}` : ''}`);
+  const what = `${lane.name}${lane.branch ? ` and local branch ${lane.branch}` : ''}`;
+  log(folderGone ? `removed ${what}` : `removed ${what}; the folder itself is left (see warning)`);
+}
+
+/** Folders under the lane root that no repo knows as a worktree (left by a failed removal). */
+function leftovers(lanes) {
+  if (!fs.existsSync(config.root)) return [];
+  return fs.readdirSync(config.root, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+    .map((e) => path.join(config.root, e.name))
+    .filter((dir) => !lanes.some((l) => samePath(l.path, dir)));
 }
 
 export function cmdClean(opts) {
@@ -181,9 +235,17 @@ export function cmdClean(opts) {
     log(`${ok ? 'remove' : 'keep  '}  ${l.name}  (${why})`);
     if (ok) ready.push(l);
   }
-  if (ready.length === 0) return log('nothing to clean');
-  if (!opts.yes) return log(`\n${ready.length} lane(s) can go. Run again with --yes to remove them.`);
+  const empty = [];
+  for (const dir of leftovers(lanes)) {
+    const isEmpty = fs.readdirSync(dir).length === 0;
+    log(`${isEmpty ? 'remove' : 'keep  '}  ${path.basename(dir)}  (${isEmpty ? 'empty leftover folder' : 'not a lane; left alone'})`);
+    if (isEmpty) empty.push(dir);
+  }
+  const count = ready.length + empty.length;
+  if (count === 0) return log('nothing to clean');
+  if (!opts.yes) return log(`\n${count} item(s) can go. Run again with --yes to remove them.`);
   for (const l of ready) removeLane(l);
+  for (const dir of empty) if (rmLaneFolder(dir)) log(`removed empty folder ${path.basename(dir)}`);
 }
 
 export function cmdRemove(name, opts) {
