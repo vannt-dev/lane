@@ -1,12 +1,13 @@
 // A lane: a worktree of a main clone under the lane root, usually a numbered pool slot.
 import fs from 'node:fs';
 import path from 'node:path';
+import { locks } from './checks.ts';
 import { Checkout, MainClone } from './checkout.ts';
 import { rmLaneFolder, samePath, underRoot } from './fsutil.ts';
 import { prFor, type Pr } from './github.ts';
 import { mergedInto } from './merged.ts';
 import { readMeta, writeMeta, type SlotMeta } from './meta.ts';
-import { holdAbandoned } from './stale.ts';
+import { holdAbandoned, processesUsing } from './stale.ts';
 import { age, parseReason, slotNumber, workSafe, type Worktree } from './worktrees.ts';
 
 export class Lane extends Checkout {
@@ -101,6 +102,12 @@ export class Lane extends Checkout {
   /** A hold that looks left behind: old, the slot unchanged as long, no process using it. */
   abandoned(): boolean {
     return holdAbandoned(this.dir, this.locked, this.idleMs());
+  }
+
+  /** What works in the lane now: its claims that still count (emulator, build), processes in it. */
+  inUse(): string[] {
+    const claims = locks().list().filter((c) => !c.stale && c.lanePath !== undefined && samePath(c.lanePath, this.dir));
+    return [...claims.map((c) => c.name), ...processesUsing(this.dir).map((pid) => `pid ${pid}`)];
   }
 
   /** Held for a task (and how long), or free. */

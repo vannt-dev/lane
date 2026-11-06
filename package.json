@@ -1,6 +1,6 @@
 {
   "name": "lane",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "One git worktree per task, so tasks in one repo can run side by side",
   "type": "module",

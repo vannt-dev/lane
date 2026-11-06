@@ -9,7 +9,7 @@ import { mergedInto } from '../src/merged.ts';
 import { looksAbandoned, processesUsing } from '../src/stale.ts';
 import { capture, git, lane, laneWith, locked, makeRepo, take } from './support.ts';
 
-const { cmdClean, cmdDone, cmdFree } = lane;
+const { cmdClaim, cmdClean, cmdDone, cmdFree, cmdRelease } = lane;
 // after support.ts: it points the settings at the temporary folder first
 const { Checkout } = await import('../src/checkout.ts');
 
@@ -37,16 +37,36 @@ test('mergedInto finds a squash merge, also after the base touched the same line
   assert.equal(mergedInto(lane, 'origin/main', git(a, 'rev-parse', 'HEAD')), false, 'no work of its own');
 });
 
-test('lane clean gives back a squash-merged lane without asking GitHub', () => {
+test('lane clean finds a squash merge without GitHub, and keeps the lane while it is held', () => {
   const main = makeRepo('m2');
   const a = laneWith('m2', 'feat-a', 'a.txt', 'a\n');
   const fresh = take('m2', 'feat-b');
   squashOnMain(main, 'feat-a');
-  const { out } = capture(() => cmdClean({ yes: true }));
+  const kept = capture(() => cmdClean({ yes: true, force: false })).out;
+  assert.match(kept, /keep +m2-1 +\(no PR, work already in origin\/main; still held for feat-a: lane done m2-1, or lane clean --force\)/);
+  assert.notEqual(locked(main, a), null, 'a follow-up round may still use it');
+  const { out } = capture(() => cmdClean({ yes: true, force: true }));
   assert.match(out, /give back +m2-1 +\(no PR, work already in origin\/main\)/);
   assert.match(out, /keep +m2-2 +\(no PR\)/, 'a lane with no work yet stays');
   assert.equal(locked(main, a), null);
   assert.notEqual(locked(main, fresh), null);
+});
+
+test('lane clean --force keeps a merged lane that still has a claim', () => {
+  const main = makeRepo('m5');
+  const a = laneWith('m5', 'feat-a', 'a.txt', 'a\n');
+  squashOnMain(main, 'feat-a');
+  const cwd = process.cwd();
+  process.chdir(a);
+  try {
+    capture(() => cmdClaim('emulator', { noWait: true }));
+    const { out } = capture(() => cmdClean({ yes: true, force: true }));
+    assert.match(out, /keep +m5-1 +\(no PR, work already in origin\/main; in use: emulator\)/);
+    assert.notEqual(locked(main, a), null);
+  } finally {
+    capture(() => cmdRelease('emulator'));
+    process.chdir(cwd);
+  }
 });
 
 test('lane done --lease refuses a slot that moved on to another task', () => {

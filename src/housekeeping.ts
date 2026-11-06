@@ -17,24 +17,33 @@ export function cmdList(opts: { local: boolean }): void {
   }));
 }
 
-/** Why a lane on a branch stays or goes; merged means its PR merged here, or the base has it. */
-function verdict(l: Lane, pr: Pr | null): { act: 'give back' | 'keep'; why: string } {
+/**
+ * Why a lane on a branch stays or goes; merged means its PR merged here, or the base has it.
+ * A merged lane still held stays (follow-up rounds reuse it) unless the hold looks abandoned
+ * or `force`; one with a claim or a process in it always stays.
+ */
+function verdict(l: Lane, pr: Pr | null, force: boolean): { act: 'give back' | 'keep'; why: string } {
   const merged = l.dirty() === 0 && l.merged(pr);
   const prText = pr ? `PR #${pr.number} ${pr.state.toLowerCase()}` : 'no PR';
   if (!merged) return { act: 'keep', why: prText };
-  return { act: 'give back', why: pr?.state === 'MERGED' ? prText : `${prText}, work already in origin/${l.clone.base()}` };
+  const done = pr?.state === 'MERGED' ? prText : `${prText}, work already in origin/${l.clone.base()}`;
+  if (l.locked !== null && !force && !l.abandoned())
+    return { act: 'keep', why: `${done}; still held for ${l.task()}: lane done ${l.name}, or lane clean --force` };
+  const users = l.inUse();
+  if (users.length > 0) return { act: 'keep', why: `${done}; in use: ${users.join(', ')}` };
+  return { act: 'give back', why: done };
 }
 
 /**
  * Gives back the lanes whose work merged (found through GitHub, or offline from the base
  * branch), removes lanes whose folder is gone and leftover folders, then pulls the main clones.
  */
-export function cmdClean(opts: { yes: boolean }): void {
+export function cmdClean(opts: { yes: boolean; force: boolean }): void {
   const lanes = Lane.all();
   for (const clone of new Set(lanes.filter((l) => l.branch).map((l) => l.clone))) clone.fetch();
   const actions: Array<() => void> = [];
   for (const l of lanes.filter((x) => x.branch || !x.exists)) {
-    const { act, why } = l.exists ? verdict(l, l.pr()) : { act: 'remove', why: 'folder missing' };
+    const { act, why } = l.exists ? verdict(l, l.pr(), opts.force) : { act: 'remove', why: 'folder missing' };
     log(`${act.padEnd(9)}  ${l.name}  (${why})`);
     if (act === 'remove') actions.push(() => log(l.remove()));
     if (act === 'give back') actions.push(() => log(l.giveBack(true)));

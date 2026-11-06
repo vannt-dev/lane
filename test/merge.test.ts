@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawn } from 'node:child_process';
 import { capture, git, lane, laneWith, locked, makeRepo, root } from './support.ts';
 
 const { cmdSync, cmdVerify } = lane;
@@ -62,4 +63,44 @@ test('sync leaves a conflicting lane as it was', () => {
   assert.match(out, /CONFLICT, left as it was: base\.txt/);
   assert.equal(git(lane, 'rev-parse', 'HEAD'), before);
   assert.equal(git(lane, 'status', '--porcelain'), '');
+});
+
+/** A commit on origin's main, as if another lane had merged. */
+function moveMain(main: string): void {
+  fs.writeFileSync(path.join(main, 'merged.txt'), 'from another lane\n');
+  git(main, 'add', 'merged.txt');
+  git(main, 'commit', '-q', '-m', 'another lane merged');
+  git(main, 'push', '-q', 'origin', 'main');
+}
+
+test('sync skips a lane something still runs in', async () => {
+  const main = makeRepo('thirteen');
+  const lane = laneWith('thirteen', 'feat-g', 'g.txt', 'g\n');
+  const before = git(lane, 'rev-parse', 'HEAD');
+  moveMain(main);
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 20000)', path.join(lane, 'x.js')], { stdio: 'ignore' });
+  try {
+    await new Promise((r) => setTimeout(r, 500));
+    const { result, out } = capture(() => cmdSync('thirteen', { push: false }));
+    assert.equal(result, 0, out);
+    assert.ok(out.includes(`skipped: in use (pid ${child.pid})`), out);
+    assert.equal(git(lane, 'rev-parse', 'HEAD'), before);
+  } finally {
+    child.kill();
+  }
+});
+
+test('sync leaves a lane that has no history in common with the base', () => {
+  const main = makeRepo('fourteen');
+  const lane = laneWith('fourteen', 'feat-h', 'h.txt', 'h\n');
+  const before = git(lane, 'rev-parse', 'HEAD');
+  git(main, 'checkout', '-q', '--orphan', 'rewritten');
+  fs.writeFileSync(path.join(main, 'base.txt'), 'rewritten\n');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-q', '-m', 'history rewritten');
+  git(main, 'push', '-q', '-f', 'origin', 'rewritten:main');
+  const { result, out } = capture(() => cmdSync('fourteen', { push: false }));
+  assert.equal(result, 1, out);
+  assert.match(out, /no history in common with origin\/main/);
+  assert.equal(git(lane, 'rev-parse', 'HEAD'), before);
 });

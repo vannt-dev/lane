@@ -35,11 +35,11 @@ checker. Install from a clone as above: Node does not run `.ts` files inside `no
 | `lane done [<lane>] [--lease ID] [--force]` | Gives the slot back once its work is safe: nothing uncommitted, and its commits on the remote or merged (see Merged). Detaches, deletes the local branch when safe, unlocks. With `--lease`, only while the slot is still held under that lease: a late give-back from a task that already ended never frees the task that came after. `--force` keeps unpushed commits on the local branch. |
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |
 | `lane list [--local]` | Every lane: held (task, for how long, and whether it looks abandoned) or free, branch, local changes, PR and CI (`--local`: no GitHub calls). |
-| `lane clean [--yes]` | Gives back the lanes whose work merged (see Merged), removes lanes whose folder is gone and leftover folders, then fast-forwards the main clones. |
+| `lane clean [--yes] [--force]` | Gives back the lanes whose work merged (see Merged), removes lanes whose folder is gone and leftover folders, then fast-forwards the main clones. A merged lane still held stays, since follow-up rounds (review fixes, bugs) reuse it, unless its hold looks abandoned or `--force`; one with a claim or a process in it always stays. |
 | `lane rm <lane> [--force]` | Deletes a slot for good. Refuses a held slot or unpushed work without `--force`. |
 | `lane port <usual port> [k]` | Port k (0 to stride - 1) of this slot's range: the usual port + slot x `LANE_PORT_STRIDE` + k. |
 | `lane verify <repo> [--cmd C]... [--keep]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. Kept and held when it fails, to look at. |
-| `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. |
+| `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
 | `lane brief [<lane>]` | The rules for an agent working in a lane, to paste at the top of its task: an agent started by another session does not read `CLAUDE.local.md`. |
 | `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. |
 | `lane with <res> [--slots N] -- <cmd>` | Runs a command holding one of N slots; `build` has 2 (RAM). |
@@ -57,7 +57,7 @@ lane new myrepo feat/a && lane new myrepo feat/b   # slots myrepo-1 and myrepo-2
 lane verify myrepo          # before merging: do the two still pass together?
 # merge feat/a's pull request, then:
 lane sync myrepo --push     # feat/b onto the new base, checked again, pushed
-lane clean --yes            # merged slots given back, the main clone pulled
+lane clean --yes --force    # merged slots given back (not one still in use), the main clone pulled
 ```
 
 ## The pool's rules
@@ -66,6 +66,10 @@ lane clean --yes            # merged slots given back, the main clone pulled
   `git worktree prune` leaves a locked worktree alone.
 - **Free** = not locked, nothing uncommitted, and given back with `lane done` or left
   unchanged for two hours (a session may work in an unlocked slot; its index shows it).
+- **Claim** = a lock that reads back as this hold's: lane locks the slot, reads
+  `git worktree list --porcelain` again, and goes on only when the lock carries its lease.
+  When another session locked or made the slot first, lane leaves that slot alone and picks
+  again; a failed switch gives the lock back only while it is still its own.
 - A slot held for something else is never taken. A full pool lists the slots with their
   tasks and ages; give one back or raise `LANE_MAX_SLOTS`.
 - Speed flags go on each command (`git -c checkout.workers=0 -c core.untrackedCache=true`);

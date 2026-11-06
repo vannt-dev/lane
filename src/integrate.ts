@@ -88,7 +88,11 @@ class Integration {
     if (dirty) return { note: `skipped: ${dirty} uncommitted change(s)` };
     const pr = l.pr();
     if (pr?.state === 'MERGED') return { note: `skipped: PR #${pr.number} merged (lane clean gives it back)` };
+    const users = l.inUse();
+    if (users.length > 0) return { note: `skipped: in use (${users.join(', ')})` };
     if (l.tryGit('merge-base', '--is-ancestor', this.base, 'HEAD') !== null) return { note: `already on ${this.base}` };
+    if (l.tryGit('merge-base', this.base, 'HEAD') === null)
+      return { note: `skipped: no history in common with ${this.base} (rewritten?); move the work by hand`, bad: true };
     const before = l.git('rev-parse', 'HEAD');
     if (l.tryGit(...NO_HOOKS, 'rebase', this.base) === null) {
       const files = l.conflicted();

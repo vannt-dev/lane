@@ -23,8 +23,11 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   lane free <lane> [--yes] [--force]
                              Free a hold that looks abandoned (hours unchanged, no process in it)
   lane list [--local]        Every lane: held/free (or abandoned), branch, local changes, PR and CI
-  lane clean [--yes]         Give back the slots whose work merged (GitHub, or found offline),
-                             then pull the main clones
+  lane clean [--yes] [--force]
+                             Give back the slots whose work merged (GitHub, or found offline),
+                             then pull the main clones. A slot still held stays (follow-up
+                             rounds reuse it) unless --force; one with a claim or a process
+                             in it always stays
   lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work)
   lane port <usual port> [k] Port k of this slot's range: usual + slot x ${config.portStride} + k
 
@@ -33,6 +36,7 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       merge cleanly but break each other, before the first one merges.
   lane sync <repo> [--push] [--cmd C]...
       After a lane merged: rebase the other lanes onto the new base and run their checks again.
+      Skips lanes with local changes, a claim or a process in them, or no history in common.
   lane brief [<lane>]        The rules for an agent working in a lane, to paste into its task
 
   lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator); ends with this lane's hold
@@ -99,7 +103,7 @@ function main(): number {
   if (cmd === 'new' && a !== undefined && extra.length === 0 && (b !== undefined || pr !== undefined)) {
     cmdNew(a, b, { base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open });
   } else if (cmd === 'list') cmdList({ local: values.local });
-  else if (cmd === 'clean') cmdClean({ yes: values.yes });
+  else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
   else if (cmd === 'verify' && one) return cmdVerify(a, { cmds: values.cmd, keep: values.keep });
   else if (cmd === 'sync' && one) return cmdSync(a, { cmds: values.cmd, push: values.push });
