@@ -1,5 +1,9 @@
 # lane
 
+[![CI](https://github.com/vannt-dev/lane/actions/workflows/ci.yml/badge.svg)](https://github.com/vannt-dev/lane/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Website](https://img.shields.io/badge/website-vannt--dev.github.io%2Flane-c6f36b)](https://vannt-dev.github.io/lane/)
+
 Run several tasks of one git repository at the same time, each in its own worktree (a
 "lane"), usually with one coding agent per lane, without the tasks stepping on each other.
 
@@ -8,20 +12,70 @@ holds a slot with `git worktree lock` and gives it back when its work is pushed;
 its dependencies and build caches stay, so the next task starts in seconds instead of
 checking out and installing again.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/vannt-dev/lane/main/docs/diagrams/overview-dark.svg">
+  <img alt="lane new takes a slot of the pool for a task: it locks the worktree, makes the task's branch, copies the env files and installs only when the lockfiles changed. Each held slot has its own agent and pushes its own pull request. Free slots keep their dependencies and caches. Lanes claim shared things such as the emulator and two build slots. When a pull request merges, lane verify, lane sync and lane clean check the other lanes on the new base and give merged slots back." src="https://raw.githubusercontent.com/vannt-dev/lane/main/docs/diagrams/overview-light.svg">
+</picture>
+
+## Why
+
+Coding agents work best one task per checkout. `git worktree` gives each task its own folder,
+but on its own it leaves the hard parts to you: a fresh worktree needs its dependencies
+installed again, two agents fight over one Android emulator or one dev-server port, heavy
+builds run four at a time and run out of memory, and two branches that merge cleanly as
+text can still break each other once both are in. lane handles those parts:
+
+- **Reused slots.** A task takes a slot, the slot keeps `node_modules` and build caches, and
+  dependencies are installed again only when a lockfile changed.
+- **Safe holds.** A slot is held with `git worktree lock` and a lease; another session never
+  takes it, and `lane done` refuses to give back work that is not on the remote.
+- **Shared things.** `lane claim emulator`, `lane with build -- <cmd>` (two at a time) and a
+  port range per slot (`lane port 3000`).
+- **Merge safety.** `lane verify` merges all open lanes together and runs the checks before
+  the first one merges; `lane sync` rebases the rest and checks them again after.
+- **Agent notes.** Each lane gets a `CLAUDE.local.md` (and `lane brief` for sub-agents) with
+  these rules, so Claude Code in the lane follows them.
+
+lane works with any agent or none. With [junto](https://github.com/vannt-dev/junto) each lane
+keeps its own task, and `/junto:status all` shows every lane's task in one table.
+
 ## Install
+
+Node 22.18+, git, and `gh` (logged in) for pull request and CI state. lane is written in
+TypeScript and runs as is (Node strips the types, no build step), so it installs from a clone:
+Node does not run `.ts` files inside `node_modules`, and lane is not published to npm.
 
 ```sh
 git clone https://github.com/vannt-dev/lane && cd lane
 npm install && npm link    # puts `lane` on PATH
-setx LANE_REPOS D:/code    # Windows; elsewhere export both in your shell profile
-setx LANE_ROOT D:/wt
 ```
 
-`LANE_REPOS` and `LANE_ROOT` have no default: lane stops with a message until both are set.
+Then tell lane where your clones are and where the slots go. Both are required; lane stops
+with a message naming the missing one.
 
-Node 22.18+, git, and `gh` (logged in) for pull request and CI state. Written in TypeScript
-and run as is (Node strips the types, no build step); `npm install` only brings the type
-checker. Install from a clone as above: Node does not run `.ts` files inside `node_modules`.
+```sh
+# Windows (new terminals pick it up)
+setx LANE_REPOS D:/code
+setx LANE_ROOT D:/wt
+
+# macOS / Linux: in ~/.bashrc, ~/.zshrc or similar
+export LANE_REPOS="$HOME/code"
+export LANE_ROOT="$HOME/wt"
+```
+
+lane was built and is used daily on Windows; CI runs it on Windows, Ubuntu and macOS.
+`lane new --open` starts Claude Code in a new Windows Terminal tab; elsewhere it prints the
+command to run.
+
+## Quick start
+
+```sh
+lane new myrepo feat/login        # slot myrepo-1 on a new branch feat/login, ready to work in
+cd "$LANE_ROOT/myrepo-1" && claude
+# ... commit, push, open the pull request ...
+lane done myrepo-1               # once pushed: the slot goes back to the pool, caches kept
+lane list                         # every lane: held or free, branch, changes, PR and CI
+```
 
 | Variable | Meaning |
 | --- | --- |
@@ -127,7 +181,8 @@ npm run typecheck   # tsc --noEmit: strict, no unused code
 npm test            # node --test, runs the .ts tests directly
 ```
 
-CI runs both on Windows and Ubuntu with Node 22.18. Every file stays under 150 lines.
+CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24. Every file stays under 150
+lines. `npm run diagrams` renders the overview diagram from `docs/diagrams/overview.mmd`.
 
 | File | What is in it |
 | --- | --- |

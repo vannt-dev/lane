@@ -3,19 +3,41 @@
   "version": "0.6.0",
   "private": true,
   "description": "One git worktree per task, so tasks in one repo can run side by side",
+  "license": "MIT",
+  "author": "Van Nguyen (https://github.com/vannt-dev)",
+  "homepage": "https://vannt-dev.github.io/lane/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vannt-dev/lane.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vannt-dev/lane/issues"
+  },
+  "keywords": [
+    "git",
+    "worktree",
+    "parallel",
+    "ai-agents",
+    "claude-code",
+    "cli"
+  ],
   "type": "module",
   "bin": {
     "lane": "bin/lane.ts"
   },
   "scripts": {
     "test": "node --import ./test/setup.ts --test \"test/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "diagrams": "npx -y @mermaid-js/mermaid-cli@latest -i docs/diagrams/overview.mmd -c docs/diagrams/mermaid.config.json -b transparent -t default -o docs/diagrams/overview-light.svg && npx -y @mermaid-js/mermaid-cli@latest -i docs/diagrams/overview.mmd -c docs/diagrams/mermaid.config.json -b transparent -t dark -o docs/diagrams/overview-dark.svg"
   },
   "engines": {
     "node": ">=22.18"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
+    "lefthook": "^2.2.1"
   }
 }

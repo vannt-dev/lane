@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>lane: one git worktree per task</title>
+    <meta
+      name="description"
+      content="lane gives each task of a git repository its own reusable worktree, so several coding agents work side by side: dependencies and caches kept, holds with a lease, the emulator, builds and ports shared one at a time, and lanes checked together before and after each merge."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://vannt-dev.github.io/lane/" />
+    <meta property="og:title" content="lane: one git worktree per task" />
+    <meta
+      property="og:description"
+      content="Reusable git worktrees for parallel coding agents: kept dependencies, leases, shared resources one at a time, and a check that the lanes pass together."
+    />
+    <meta name="twitter:card" content="summary" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Cpath d='M8 10h16M8 16h16M8 22h16' fill='none' stroke='%23fff' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #111827;
+        --muted: #4b5563;
+        --line: #e5e7eb;
+        --accent: #0f766e;
+        --accent-fg: #ffffff;
+        --code-bg: #0f172a;
+        --code-fg: #e2e8f0;
+        --card: #f9fafb;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --bg: #0b1020;
+          --fg: #e5e7eb;
+          --muted: #9ca3af;
+          --line: #1f2937;
+          --accent: #2dd4bf;
+          --accent-fg: #0b1020;
+          --code-bg: #111827;
+          --code-fg: #e5e7eb;
+          --card: #111827;
+        }
+      }
+      :root[data-theme='dark'] {
+        --bg: #0b1020;
+        --fg: #e5e7eb;
+        --muted: #9ca3af;
+        --line: #1f2937;
+        --accent: #2dd4bf;
+        --accent-fg: #0b1020;
+        --code-bg: #111827;
+        --code-fg: #e5e7eb;
+        --card: #111827;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+      }
+      a {
+        color: var(--accent);
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header {
+        padding: 56px 0 32px;
+      }
+      nav {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      nav a {
+        color: var(--fg);
+        text-decoration: none;
+        margin-left: 16px;
+      }
+      nav .brand {
+        font-weight: 700;
+        margin: 0;
+      }
+      nav select {
+        font: inherit;
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      h1 {
+        font-size: clamp(32px, 6vw, 52px);
+        line-height: 1.1;
+        margin: 0 0 12px;
+        letter-spacing: -0.02em;
+      }
+      .pitch {
+        font-size: clamp(20px, 3.2vw, 26px);
+        line-height: 1.3;
+        font-weight: 600;
+        max-width: 760px;
+        margin: 0 0 16px;
+      }
+      .lead {
+        font-size: 18px;
+        color: var(--muted);
+        max-width: 760px;
+        margin: 0 0 24px;
+      }
+      .cta {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        display: inline-block;
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        color: var(--fg);
+        text-decoration: none;
+        font-weight: 600;
+      }
+      .btn.primary {
+        background: var(--accent);
+        color: var(--accent-fg);
+        border-color: var(--accent);
+      }
+      pre {
+        background: var(--code-bg);
+        color: var(--code-fg);
+        padding: 18px 20px;
+        border-radius: 10px;
+        overflow-x: auto;
+        font:
+          13.5px/1.55 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        margin: 0;
+      }
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.92em;
+      }
+      p code,
+      li code,
+      td code,
+      figcaption code {
+        background: var(--card);
+        border: 1px solid var(--line);
+        padding: 1px 5px;
+        border-radius: 4px;
+        overflow-wrap: anywhere;
+      }
+      .dim {
+        color: #94a3b8;
+      }
+      figure {
+        margin: 0 0 32px;
+      }
+      .diagram {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+      }
+      .diagram img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+      figcaption {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 10px;
+      }
+      section {
+        padding: 32px 0;
+        border-top: 1px solid var(--line);
+      }
+      h2 {
+        font-size: 26px;
+        margin: 0 0 8px;
+        letter-spacing: -0.01em;
+      }
+      h3 {
+        font-size: 17px;
+        margin: 24px 0 8px;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+        gap: 16px;
+      }
+      .grid.two {
+        grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+      }
+      .grid2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px 24px;
+      }
+      .grid2 > div > h3:first-child {
+        margin-top: 24px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 18px 20px;
+      }
+      .card h3 {
+        margin: 0 0 6px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .note {
+        color: var(--muted);
+        margin: 8px 0 12px;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 15px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+      th {
+        font-weight: 600;
+        width: 28%;
+      }
+      td {
+        color: var(--muted);
+      }
+      td b {
+        color: var(--fg);
+        font-weight: 600;
+      }
+      ul {
+        margin: 0;
+        padding-left: 20px;
+      }
+      li {
+        margin: 4px 0;
+      }
+      footer {
+        padding: 32px 0 48px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+      }
+      footer a {
+        color: var(--fg);
+      }
+      @media (max-width: 720px) {
+        .grid2 {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        .diagram img {
+          min-width: 720px;
+        }
+        th {
+          width: 34%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav>
+        <p class="brand">lane</p>
+        <div>
+          <a href="#handles" data-i18n="nav.handles">What it handles</a>
+          <a href="#round" data-i18n="nav.round">A round</a>
+          <a href="#start" data-i18n="nav.start">Get started</a>
+          <a href="https://github.com/vannt-dev/lane">GitHub</a>
+          <select id="lang" aria-label="Language">
+            <option value="en">English</option>
+            <option value="vi">Tiếng Việt</option>
+          </select>
+        </div>
+      </nav>
+
+      <header>
+        <h1>lane</h1>
+        <p class="pitch" data-i18n="hero.pitch">One git worktree per task, so several tasks of one repository run side by side.</p>
+        <p class="lead" data-i18n="hero.lead">
+          Give each coding agent its own lane: a reusable worktree that keeps its dependencies and build caches, held with a lease so no
+          other session takes it, with shared things (the emulator, heavy builds, ports) handed out one at a time, and a check that the
+          lanes still pass together before and after each merge.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="#start" data-i18n="cta.start">Get started</a>
+          <a class="btn" href="https://github.com/vannt-dev/lane">GitHub</a>
+        </div>
+      </header>
+
+      <figure>
+        <div class="diagram">
+          <picture>
+            <source media="(prefers-color-scheme: dark)" srcset="diagrams/overview-dark.svg" />
+            <img
+              src="diagrams/overview-light.svg"
+              alt="lane new takes a slot of the pool for a task: it locks the worktree, makes the task's branch, copies the env files and installs only when the lockfiles changed. Each held slot has its own agent and pushes its own pull request. Free slots keep their dependencies and caches. Lanes claim shared things such as the emulator and two build slots. When a pull request merges, lane verify, lane sync and lane clean check the other lanes on the new base and give merged slots back."
+            />
+          </picture>
+        </div>
+        <figcaption data-i18n="fig.cap">
+          All lanes of a repository share one <code>.git</code>; each has its own files, dependencies and build output. The state is
+          <code>git worktree list</code> itself: no daemon, no database. <a href="diagrams/overview-light.svg">Open the diagram</a>
+        </figcaption>
+      </figure>
+
+      <section id="handles">
+        <h2 data-i18n="h.h2">What it handles</h2>
+        <p class="sub" data-i18n="h.sub">
+          <code>git worktree</code> gives each task its own folder. The hard parts come after: installing again in every new folder, two
+          agents on one emulator or one port, four builds at once running out of memory, and two branches that merge cleanly as text but
+          break each other.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <h3 data-i18n="h.1.h">Reused slots</h3>
+            <p data-i18n="h.1">
+              Numbered worktrees <code>&lt;repo&gt;-&lt;n&gt;</code> that come back to a pool. A task gets the slot it had before, else a
+              free one; dependencies are installed again only when a lockfile changed, so a new task starts in seconds.
+            </p>
+          </div>
+          <div class="card">
+            <h3 data-i18n="h.2.h">Holds with a lease</h3>
+            <p data-i18n="h.2">
+              A slot is held with <code>git worktree lock</code> and read back with this hold's lease, so two sessions never take the same
+              slot. <code>lane done</code> refuses to give back work that is not on the remote.
+            </p>
+          </div>
+          <div class="card">
+            <h3 data-i18n="h.3.h">Shared things, one at a time</h3>
+            <p data-i18n="h.3">
+              <code>lane claim emulator</code> waits for the Android emulator, <code>lane with build -- &lt;cmd&gt;</code> lets two heavy
+              builds run at once, and <code>lane port 3000</code> gives each slot its own range of ports.
+            </p>
+          </div>
+          <div class="card">
+            <h3 data-i18n="h.4.h">Checked together</h3>
+            <p data-i18n="h.4">
+              <code>lane verify</code> merges every open lane on top of the base and runs the checks before the first one merges.
+              <code>lane sync</code> rebases the rest after a merge and checks them again.
+            </p>
+          </div>
+          <div class="card">
+            <h3 data-i18n="h.5.h">Merges found offline</h3>
+            <p data-i18n="h.5">
+              <code>lane clean</code> gives back the lanes whose work merged, squash merges included, even without asking GitHub. A lane
+              still held for follow-up rounds stays.
+            </p>
+          </div>
+          <div class="card">
+            <h3 data-i18n="h.6.h">Notes for the agent</h3>
+            <p data-i18n="h.6">
+              Each lane gets a <code>CLAUDE.local.md</code> with these rules, and <code>lane brief</code> prints them for a sub-agent. Heavy
+              git hooks such as <code>pre-push</code> wait for a build slot.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section id="round">
+        <h2 data-i18n="round.h2">A round with two tasks</h2>
+        <p class="sub" data-i18n="round.sub">Two agents on one repository, from the first command to the slots given back.</p>
+        <pre><span class="dim">$</span> lane new myrepo feat/a          <span class="dim"># slot myrepo-1, branch feat/a</span>
+<span class="dim">$</span> lane new myrepo feat/b          <span class="dim"># slot myrepo-2, branch feat/b</span>
+<span class="dim">$</span> lane list                       <span class="dim"># held or free, branch, changes, PR and CI</span>
+<span class="dim">$</span> lane verify myrepo              <span class="dim"># before merging: do the two pass together?</span>
+<span class="dim"># merge feat/a's pull request, then:</span>
+<span class="dim">$</span> lane sync myrepo --push         <span class="dim"># feat/b onto the new base, checked again, pushed</span>
+<span class="dim">$</span> lane clean --yes                <span class="dim"># merged slots back to the pool, main clone pulled</span></pre>
+        <h3 data-i18n="round.junto.h">With junto</h3>
+        <p class="note" data-i18n="round.junto">
+          With <a href="https://github.com/vannt-dev/junto">junto</a> each lane keeps its own task and quality gates, and
+          <code>/junto:status all</code> shows every lane's task in one table (or a board with <code>/junto:status html</code>). junto warns
+          when the base moved since a lane was verified, the same lesson <code>lane sync</code> acts on.
+        </p>
+      </section>
+
+      <section id="commands">
+        <h2 data-i18n="cmd.h2">Commands</h2>
+        <table>
+          <tr>
+            <th><code>lane new &lt;repo&gt; &lt;task&gt;</code></th>
+            <td data-i18n="cmd.new">
+              Take a slot for a task: new branch, submodules, env files, install when lockfiles changed, notes for the agent.
+              <code>--pr &lt;n&gt;</code> works on a pull request's branch.
+            </td>
+          </tr>
+          <tr>
+            <th><code>lane done [&lt;lane&gt;]</code></th>
+            <td data-i18n="cmd.done">Give the slot back once its work is pushed or merged.</td>
+          </tr>
+          <tr>
+            <th><code>lane list</code></th>
+            <td data-i18n="cmd.list">Every lane: held or free, branch, local changes, pull request and CI.</td>
+          </tr>
+          <tr>
+            <th><code>lane verify &lt;repo&gt;</code> · <code>lane sync &lt;repo&gt;</code></th>
+            <td data-i18n="cmd.verify">All open lanes merged together and checked; after a merge, the rest rebased and checked again.</td>
+          </tr>
+          <tr>
+            <th><code>lane clean</code> · <code>lane free</code> · <code>lane rm</code></th>
+            <td data-i18n="cmd.clean">Give back merged lanes, free a hold left behind by a closed session, delete a slot for good.</td>
+          </tr>
+          <tr>
+            <th><code>lane claim</code> · <code>lane with</code> · <code>lane port</code></th>
+            <td data-i18n="cmd.claim">The emulator for one lane at a time, a cap on heavy builds, a range of ports per slot.</td>
+          </tr>
+          <tr>
+            <th><code>lane brief</code></th>
+            <td data-i18n="cmd.brief">The rules for an agent working in a lane, to paste into its task.</td>
+          </tr>
+        </table>
+      </section>
+
+      <section id="start">
+        <h2 data-i18n="gs.h2">Get started</h2>
+        <p class="sub" data-i18n="gs.sub">Built and used daily on Windows; CI runs it on Windows, Ubuntu and macOS.</p>
+        <div class="grid2">
+          <div>
+            <h3 data-i18n="gs.pre.h">Prerequisites</h3>
+            <ul>
+              <li data-i18n="gs.pre.1">Node 22.18 or newer: lane is TypeScript that Node runs as is, with no build step.</li>
+              <li>git</li>
+              <li data-i18n="gs.pre.3"><code>gh</code>, logged in, for pull request and CI state (optional).</li>
+            </ul>
+            <h3 data-i18n="gs.inst.h">Install from a clone</h3>
+            <p class="note" data-i18n="gs.inst">
+              Node does not run <code>.ts</code> files inside <code>node_modules</code>, so lane is not on npm.
+            </p>
+            <pre><span class="dim">$</span> git clone https://github.com/vannt-dev/lane
+<span class="dim">$</span> cd lane && npm install && npm link</pre>
+          </div>
+          <div>
+            <h3 data-i18n="gs.env.h">Tell lane where things are</h3>
+            <p class="note" data-i18n="gs.env">
+              <code>LANE_REPOS</code> holds your clones, <code>LANE_ROOT</code> the slots. Both are required.
+            </p>
+            <pre><span class="dim"># Windows</span>
+<span class="dim">$</span> setx LANE_REPOS D:/code
+<span class="dim">$</span> setx LANE_ROOT D:/wt
+<span class="dim"># macOS / Linux (shell profile)</span>
+export LANE_REPOS="$HOME/code"
+export LANE_ROOT="$HOME/wt"</pre>
+          </div>
+        </div>
+
+        <h3 data-i18n="gs.lim.h">Limits</h3>
+        <ul>
+          <li data-i18n="lim.1">
+            <code>lane new --open</code> starts Claude Code in a new Windows Terminal tab; elsewhere it prints the command to run.
+          </li>
+          <li data-i18n="lim.2">
+            Windows does not tell another process's working folder, so a shell sitting in a slot is not seen when lane looks for left-behind
+            holds; a process naming the slot on its command line is.
+          </li>
+          <li data-i18n="lim.3">A branch can be checked out in one lane at a time; <code>lane done</code> detaches the slot.</li>
+          <li data-i18n="lim.4">
+            <code>lane verify</code> catches lanes that break each other only as far as your checks reach: tests, typecheck, lint.
+          </li>
+        </ul>
+      </section>
+
+      <footer>
+        lane · <a href="https://github.com/vannt-dev/lane/blob/main/LICENSE">MIT</a> ·
+        <a href="https://github.com/vannt-dev/lane">GitHub</a> · <a href="https://github.com/vannt-dev/junto">junto</a> ·
+        <a href="https://github.com/vannt-dev">vannt-dev</a>
+      </footer>
+    </div>
+
+    <script>
+      var I18N = {
+        vi: {
+          'nav.handles': 'Lo được gì',
+          'nav.round': 'Một vòng',
+          'nav.start': 'Bắt đầu',
+          'hero.pitch': 'Mỗi task một git worktree, để nhiều task của cùng một repository chạy song song.',
+          'hero.lead':
+            'Cho mỗi coding agent một lane riêng: một worktree dùng lại được, giữ sẵn thư viện và cache build, được giữ bằng lease để không phiên nào khác lấy mất, các tài nguyên dùng chung (máy ảo Android, build nặng, cổng) được chia lần lượt, và có bước kiểm tra các lane vẫn chạy được cùng nhau trước và sau mỗi lần merge.',
+          'cta.start': 'Bắt đầu',
+          'fig.cap':
+            'Mọi lane của một repository dùng chung một <code>.git</code>; mỗi lane có file, thư viện và kết quả build riêng. Trạng thái chính là <code>git worktree list</code>: không có tiến trình nền, không có cơ sở dữ liệu. <a href="diagrams/overview-light.svg">Mở sơ đồ</a>',
+          'h.h2': 'lane lo được gì',
+          'h.sub':
+            '<code>git worktree</code> cho mỗi task một thư mục riêng. Phần khó đến sau đó: thư mục mới nào cũng phải cài lại thư viện, hai agent tranh một máy ảo hay một cổng, bốn bản build chạy cùng lúc làm cạn RAM, và hai nhánh merge sạch về mặt chữ nhưng ghép lại thì hỏng.',
+          'h.1.h': 'Slot dùng lại',
+          'h.1':
+            'Các worktree đánh số <code>&lt;repo&gt;-&lt;n&gt;</code> quay về một pool. Task lấy lại đúng slot nó từng dùng, không có thì lấy slot trống; thư viện chỉ cài lại khi lockfile đổi, nên task mới bắt đầu trong vài giây.',
+          'h.2.h': 'Giữ slot bằng lease',
+          'h.2':
+            'Slot được giữ bằng <code>git worktree lock</code> và đọc lại theo lease của lần giữ này, nên hai phiên không bao giờ lấy cùng một slot. <code>lane done</code> không cho trả slot khi việc chưa có trên remote.',
+          'h.3.h': 'Tài nguyên chung, lần lượt từng lane',
+          'h.3':
+            '<code>lane claim emulator</code> chờ tới lượt dùng máy ảo Android, <code>lane with build -- &lt;cmd&gt;</code> cho tối đa hai bản build nặng chạy cùng lúc, và <code>lane port 3000</code> cho mỗi slot một dải cổng riêng.',
+          'h.4.h': 'Kiểm tra cùng nhau',
+          'h.4':
+            '<code>lane verify</code> merge mọi lane đang mở lên base rồi chạy kiểm tra, trước khi lane đầu tiên được merge. <code>lane sync</code> rebase các lane còn lại sau mỗi lần merge rồi kiểm tra lại.',
+          'h.5.h': 'Nhận ra đã merge mà không cần GitHub',
+          'h.5':
+            '<code>lane clean</code> trả lại các lane đã merge, kể cả squash merge, không cần hỏi GitHub. Lane còn được giữ cho các vòng sửa tiếp theo thì được để lại.',
+          'h.6.h': 'Ghi chú cho agent',
+          'h.6':
+            'Mỗi lane có một <code>CLAUDE.local.md</code> ghi các quy tắc này, và <code>lane brief</code> in chúng ra cho agent phụ. Các git hook nặng như <code>pre-push</code> chờ tới lượt build.',
+          'round.h2': 'Một vòng với hai task',
+          'round.sub': 'Hai agent trên một repository, từ lệnh đầu tiên tới khi trả slot.',
+          'round.junto.h': 'Dùng cùng junto',
+          'round.junto':
+            'Với <a href="https://github.com/vannt-dev/junto">junto</a>, mỗi lane giữ task và các quality gate riêng, và <code>/junto:status all</code> hiện task của mọi lane trong một bảng (hoặc một trang board với <code>/junto:status html</code>). junto cảnh báo khi base đã đổi sau lần verify của một lane, đúng bài học mà <code>lane sync</code> xử lý.',
+          'cmd.h2': 'Các lệnh',
+          'cmd.new':
+            'Lấy một slot cho task: nhánh mới, submodule, file env, cài thư viện khi lockfile đổi, ghi chú cho agent. <code>--pr &lt;n&gt;</code> làm trên nhánh của một pull request.',
+          'cmd.done': 'Trả slot khi việc đã được push hoặc merge.',
+          'cmd.list': 'Mọi lane: đang giữ hay trống, nhánh, thay đổi chưa commit, pull request và CI.',
+          'cmd.verify': 'Merge mọi lane đang mở với nhau rồi kiểm tra; sau một lần merge, rebase các lane còn lại và kiểm tra lại.',
+          'cmd.clean': 'Trả các lane đã merge, giải phóng slot bị bỏ quên khi một phiên đóng, xóa hẳn một slot.',
+          'cmd.claim': 'Máy ảo cho từng lane một, giới hạn số build nặng, một dải cổng cho mỗi slot.',
+          'cmd.brief': 'Quy tắc cho agent làm việc trong lane, để dán vào task của nó.',
+          'gs.h2': 'Bắt đầu',
+          'gs.sub': 'Làm ra và dùng hằng ngày trên Windows; CI chạy trên Windows, Ubuntu và macOS.',
+          'gs.pre.h': 'Cần có',
+          'gs.pre.1': 'Node 22.18 trở lên: lane là TypeScript mà Node chạy thẳng, không cần build.',
+          'gs.pre.3': '<code>gh</code> đã đăng nhập, để xem trạng thái pull request và CI (không bắt buộc).',
+          'gs.inst.h': 'Cài từ bản clone',
+          'gs.inst': 'Node không chạy file <code>.ts</code> nằm trong <code>node_modules</code>, nên lane không có trên npm.',
+          'gs.env.h': 'Cho lane biết mọi thứ nằm ở đâu',
+          'gs.env': '<code>LANE_REPOS</code> chứa các bản clone, <code>LANE_ROOT</code> chứa các slot. Cả hai đều bắt buộc.',
+          'gs.lim.h': 'Giới hạn',
+          'lim.1':
+            '<code>lane new --open</code> mở Claude Code trong một tab Windows Terminal mới; trên hệ khác, lệnh in ra câu lệnh để bạn tự chạy.',
+          'lim.2':
+            'Windows không cho biết thư mục làm việc của tiến trình khác, nên khi tìm slot bị bỏ quên, lane không thấy một shell đang đứng trong slot; tiến trình có tên slot trên dòng lệnh thì vẫn thấy.',
+          'lim.3': 'Mỗi nhánh chỉ checkout được ở một lane một lúc; <code>lane done</code> tách slot khỏi nhánh.',
+          'lim.4':
+            '<code>lane verify</code> chỉ bắt được các lane làm hỏng nhau trong phạm vi các bước kiểm tra của bạn: test, typecheck, lint.',
+        },
+      };
+      var sel = document.getElementById('lang');
+      var EN = {};
+      document.querySelectorAll('[data-i18n]').forEach(function (el) {
+        EN[el.getAttribute('data-i18n')] = el.innerHTML;
+      });
+      function apply(lang) {
+        var dict = lang === 'en' ? EN : I18N[lang] || EN;
+        document.querySelectorAll('[data-i18n]').forEach(function (el) {
+          var k = el.getAttribute('data-i18n');
+          if (dict[k] !== undefined) el.innerHTML = dict[k];
+        });
+        document.documentElement.lang = lang;
+        sel.value = lang;
+        try {
+          localStorage.setItem('lang', lang);
+        } catch (e) {}
+      }
+      var saved = null;
+      try {
+        saved = localStorage.getItem('lang');
+      } catch (e) {}
+      var initial = saved || (navigator.language && navigator.language.toLowerCase().indexOf('vi') === 0 ? 'vi' : 'en');
+      if (initial !== 'en') apply(initial);
+      sel.addEventListener('change', function () {
+        apply(sel.value);
+      });
+    </script>
+  </body>
+</html>
