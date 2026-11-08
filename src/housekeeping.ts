@@ -13,7 +13,9 @@ export function cmdList(opts: { local: boolean }): void {
   printTable(['lane', 'state', 'branch', 'local', 'PR / CI'], lanes.map((l) => {
     const pr = opts.local || !l.branch ? undefined : l.pr();
     const prText = pr === undefined ? '-' : pr ? `#${pr.number} ${pr.state.toLowerCase()} ${pr.checks}` : 'no PR';
-    return [l.name, l.stateText(), l.branch || '(detached)', l.exists ? `${l.dirty()} changed, ${l.ahead()} unpushed` : '-', prText];
+    // A detached slot has no branch to push: its commits (verify's merges) go when it is taken again.
+    const local = !l.exists ? '-' : l.branch ? `${l.dirty()} changed, ${l.ahead()} unpushed` : `${l.dirty()} changed`;
+    return [l.name, l.stateText(), l.branch || '(detached)', local, prText];
   }));
 }
 
