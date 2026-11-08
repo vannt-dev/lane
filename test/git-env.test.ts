@@ -28,7 +28,7 @@ test('run with a folder reaches that repository while a hook GIT_DIR points else
   process.env.GIT_DIR = path.join(hook, '.git');
   t.after(() => delete process.env.GIT_DIR);
   const gitDir = run('git', ['rev-parse', '--absolute-git-dir'], target);
-  assert.equal(fs.realpathSync(gitDir), fs.realpathSync(path.join(target, '.git')));
+  assert.equal(fs.realpathSync.native(gitDir), fs.realpathSync.native(path.join(target, '.git')));
 });
 
 test('runLive runs in its folder while a hook GIT_DIR points elsewhere', (t) => {
