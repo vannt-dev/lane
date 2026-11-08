@@ -1,12 +1,16 @@
 // Running programs. Everything else goes through these few functions.
 import { spawnSync } from 'node:child_process';
+import { gitEnv } from './git-env.ts';
 
 /**
  * Runs a program without a shell, `input` on its stdin; returns trimmed stdout, throws with
  * stderr on failure. The buffer is large: `git log -p` of a busy branch is many megabytes.
+ * A call that names a folder drops the repository variables a git hook exports (lane runs
+ * inside wrapped hooks), because they would point git back at the hook's repository.
  */
 export function run(cmd: string, args: readonly string[], cwd?: string, input?: string): string {
-  const r = spawnSync(cmd, args, { cwd, input, encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
+  const env = cwd === undefined ? undefined : gitEnv();
+  const r = spawnSync(cmd, args, { cwd, env, input, encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 });
   if (r.error) throw r.error;
   if (r.status !== 0) {
     const msg = (r.stderr || r.stdout || '').trim();
