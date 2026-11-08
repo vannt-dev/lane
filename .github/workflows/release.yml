@@ -1,0 +1,36 @@
+# Managed by repokeeper (https://github.com/vannt-dev/repokeeper). Edits are reported by `repokeeper check`. Keys and jobs you add yourself are left alone.
+
+name: release
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  release-pr-ci:
+    needs: release
+    if: ${{ needs.release.outputs.pr_branch != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ needs.release.outputs.pr_branch }}
+        run: |
+          for _ in 1 2 3 4 5 6; do
+            ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?branch=$BRANCH&event=pull_request&status=action_required" --jq '.workflow_runs[].id')
+            [ -n "$ids" ] && break
+            sleep 10
+          done
+          if [ -z "$ids" ]; then echo "::notice::no held runs for $BRANCH"; fi
+          for id in $ids; do gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve"; done
+  release:
+    uses: vannt-dev/repokeeper/.github/workflows/release-please.yml@v0
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    secrets:
+      token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
