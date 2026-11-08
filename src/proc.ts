@@ -31,10 +31,11 @@ export function tryRun(cmd: string, args: readonly string[], cwd?: string, input
 /**
  * Runs a fixed command line through the shell with its output shown live (npm, pnpm and
  * flutter are .cmd/.bat files on Windows, so they need a shell). Only for commands built
- * in this package, never for user text.
+ * in this package, never for user text. It always runs in a lane folder, so like run() it
+ * drops a hook's repository variables (git submodule update would act on the hook's repo).
  */
 export function runLive(commandLine: string, cwd: string): boolean {
-  return spawnSync(commandLine, { cwd, shell: true, stdio: 'inherit', windowsHide: true }).status === 0;
+  return spawnSync(commandLine, { cwd, env: gitEnv(), shell: true, stdio: 'inherit', windowsHide: true }).status === 0;
 }
 
 /**
