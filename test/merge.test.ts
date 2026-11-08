@@ -132,3 +132,14 @@ test('sync --push pushes a lane fixed after an earlier sync rebased it and found
   assert.match(out, /m10-2 +already on origin\/main, not pushed yet, checks pass, pushed/);
   assert.equal(git(b, 'rev-parse', 'origin/feat-b'), git(b, 'rev-parse', 'HEAD'));
 });
+
+test('a verify slot given back lists no unpushed work: its merges are on no branch', () => {
+  makeRepo('m11');
+  laneWith('m11', 'feat-a', 'a.txt', 'a\n');
+  laneWith('m11', 'feat-b', 'b.txt', 'b\n');
+  capture(() => cmdVerify('m11', { keep: false }));
+  capture(() => lane.cmdDone('m11-3', { force: true }));
+  const row = capture(() => lane.cmdList({ local: true })).out.split('\n').find((l) => l.startsWith('m11-3')) ?? '';
+  assert.match(row, /\(detached\) +0 changed +-$/);
+  assert.doesNotMatch(row, /unpushed/);
+});
