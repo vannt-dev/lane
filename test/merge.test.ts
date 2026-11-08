@@ -116,3 +116,19 @@ test('sync leaves a lane whose work is already in the base, also without GitHub'
   assert.match(out, /m9-1 +skipped: work already in origin\/main \(lane clean gives it back\)/);
   assert.match(out, /m9-2 +rebased, checks pass/);
 });
+
+test('sync --push pushes a lane fixed after an earlier sync rebased it and found it failing', () => {
+  const main = makeRepo('m10');
+  laneWith('m10', 'feat-a', 'a.txt', 'a\n');
+  const b = laneWith('m10', 'feat-b', 'b.txt', 'b\n');
+  git(b, 'push', '-q', '-u', 'origin', 'feat-b');
+  git(main, 'merge', '--squash', '-q', 'feat-a');
+  git(main, 'commit', '-q', '-m', 'squash feat-a');
+  git(main, 'push', '-q', 'origin', 'main');
+  assert.match(capture(() => cmdSync('m10', { push: true })).out, /m10-2 +rebased; "node check\.js" FAILS/);
+  git(b, 'mv', 'b.txt', 'c.txt');
+  git(b, 'commit', '-q', '-m', 'rename b to c');
+  const { out } = capture(() => cmdSync('m10', { push: true }));
+  assert.match(out, /m10-2 +already on origin\/main, not pushed yet, checks pass, pushed/);
+  assert.equal(git(b, 'rev-parse', 'origin/feat-b'), git(b, 'rev-parse', 'HEAD'));
+});
