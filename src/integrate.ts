@@ -92,7 +92,7 @@ class Integration {
     if (l.merged(pr)) return { note: `skipped: work already in ${this.base} (lane clean gives it back)` };
     const users = l.inUse();
     if (users.length > 0) return { note: `skipped: in use (${users.join(', ')})` };
-    if (l.tryGit('merge-base', '--is-ancestor', this.base, 'HEAD') !== null) return { note: `already on ${this.base}` };
+    if (l.tryGit('merge-base', '--is-ancestor', this.base, 'HEAD') !== null) return this.onBase(l, opts);
     if (l.tryGit('merge-base', this.base, 'HEAD') === null)
       return { note: `skipped: no history in common with ${this.base} (rewritten?); move the work by hand`, bad: true };
     const before = l.git('rev-parse', 'HEAD');
@@ -103,12 +103,26 @@ class Integration {
     }
     const changed = (l.tryGit('diff', '--name-only', before, 'HEAD') ?? '').split(/\r?\n/);
     if (changed.some((f) => LOCKFILES.includes(path.basename(f)))) new LaneSetup(l).install();
+    return this.checkAndPush(l, opts, 'rebased');
+  }
+
+  /**
+   * A lane already on the base. An earlier sync may have rebased it and found it failing; once
+   * it is fixed, it still differs from its remote branch, so it is checked and pushed like a rebase.
+   */
+  private onBase(l: Lane, opts: IntegrateOptions & { push: boolean }): { note: string; bad?: boolean } {
+    const remote = `refs/remotes/origin/${l.branch}`;
+    if (!l.hasRef(remote) || l.git('rev-parse', 'HEAD') === l.git('rev-parse', remote)) return { note: `already on ${this.base}` };
+    return this.checkAndPush(l, opts, `already on ${this.base}, not pushed yet`);
+  }
+
+  private checkAndPush(l: Lane, opts: IntegrateOptions & { push: boolean }, what: string): { note: string; bad?: boolean } {
     const result = runChecks(l, checksFor(this.clone, l, opts.cmds));
-    if (!result.ok) return { note: `rebased; "${result.failed}" FAILS on top of ${this.base}`, bad: true };
-    if (!l.hasRef(`refs/remotes/origin/${l.branch}`)) return { note: 'rebased, checks pass' };
-    if (!opts.push) return { note: 'rebased, checks pass; push with --force-with-lease (or lane sync --push)' };
+    if (!result.ok) return { note: `${what}; "${result.failed}" FAILS on top of ${this.base}`, bad: true };
+    if (!l.hasRef(`refs/remotes/origin/${l.branch}`)) return { note: `${what}, checks pass` };
+    if (!opts.push) return { note: `${what}, checks pass; push with --force-with-lease (or lane sync --push)` };
     const pushed = l.tryGit('push', '--force-with-lease', 'origin', l.branch) !== null;
-    return { note: `rebased, checks pass, ${pushed ? 'pushed' : 'PUSH FAILED'}`, bad: !pushed };
+    return { note: `${what}, checks pass, ${pushed ? 'pushed' : 'PUSH FAILED'}`, bad: !pushed };
   }
 }
 
