@@ -88,6 +88,8 @@ class Integration {
     if (dirty) return { note: `skipped: ${dirty} uncommitted change(s)` };
     const pr = l.pr();
     if (pr?.state === 'MERGED') return { note: `skipped: PR #${pr.number} merged (lane clean gives it back)` };
+    // Without GitHub (no gh, another host) a squash-merged lane would be rebased and force-pushed.
+    if (l.merged(pr)) return { note: `skipped: work already in ${this.base} (lane clean gives it back)` };
     const users = l.inUse();
     if (users.length > 0) return { note: `skipped: in use (${users.join(', ')})` };
     if (l.tryGit('merge-base', '--is-ancestor', this.base, 'HEAD') !== null) return { note: `already on ${this.base}` };
