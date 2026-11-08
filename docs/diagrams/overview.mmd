@@ -1,0 +1,21 @@
+%% Re-render the SVGs after editing: npm run diagrams
+flowchart LR
+  clone["Main clone<br/>LANE_REPOS/myrepo<br/>one shared .git"]
+
+  subgraph pool ["Slot pool: LANE_ROOT/myrepo-n"]
+    direction TB
+    s3["myrepo-3<br/>free, dependencies<br/>and caches kept"]
+    s2["myrepo-2<br/>held for feat/b<br/>agent 2"]
+    s1["myrepo-1<br/>held for feat/a<br/>agent 1"]
+  end
+
+  locks[("Shared things<br/>emulator claim<br/>2 build slots<br/>a port range per slot")]
+  remote["origin<br/>pull requests and CI"]
+  merge["Before and after a merge<br/>lane verify: all lanes together<br/>lane sync: rebase the rest, check again<br/>lane clean: give merged slots back"]
+
+  clone -- "lane new: lock a slot, new branch,<br/>env files, install if lockfiles changed" --> pool
+  s1 -- "push, PR" --> remote
+  s2 -- "push, PR" --> remote
+  pool -. "lane claim, lane with build" .-> locks
+  remote -- "a PR merged" --> merge
+  merge --> pool
