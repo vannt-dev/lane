@@ -8,7 +8,7 @@
     "lane": "bin/lane.ts"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.ts\"",
+    "test": "node --import ./test/setup.ts --test \"test/*.test.ts\"",
     "typecheck": "tsc --noEmit"
   },
   "engines": {
