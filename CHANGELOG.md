@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/vannt-dev/lane/compare/v0.7.0...v0.7.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **list:** no unpushed count for a detached slot ([#10](https://github.com/vannt-dev/lane/issues/10)) ([9246da6](https://github.com/vannt-dev/lane/commit/9246da6b508ba5e3f8de9aa29582809f533cabe4))
+
 ## [0.7.0](https://github.com/vannt-dev/lane/compare/v0.6.0...v0.7.0) (2026-11-08)
 
 
