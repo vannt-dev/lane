@@ -7,7 +7,7 @@ import {
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
 
-  Lanes are slots: reusable worktrees ${config.root}/<repo>-<n> (up to ${config.maxSlots} per repo),
+  Lanes are slots: reusable worktrees ${process.env.LANE_ROOT || '$LANE_ROOT'}/<repo>-<n> (up to ${config.maxSlots} per repo),
   held with git worktree lock while a task uses them and given back afterwards, folder,
   dependencies and build caches kept for the next task.
 
@@ -47,8 +47,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
 
   Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
   package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
-  <repo> is a folder in ${config.repos}.
-  Env: LANE_ROOT, LANE_REPOS, LANE_MAX_SLOTS, LANE_PORT_STRIDE.`;
+  <repo> is a folder in ${process.env.LANE_REPOS || '$LANE_REPOS'}.
+  Env: LANE_ROOT and LANE_REPOS (required, no default), LANE_MAX_SLOTS, LANE_PORT_STRIDE.`;
 
 // Everything after "--" is the command for `lane with`, passed through untouched.
 const argv = process.argv.slice(2);

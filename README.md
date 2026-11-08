@@ -13,7 +13,11 @@ checking out and installing again.
 ```sh
 git clone https://github.com/vannt-dev/lane && cd lane
 npm install && npm link    # puts `lane` on PATH
+setx LANE_REPOS D:/code    # Windows; elsewhere export both in your shell profile
+setx LANE_ROOT D:/wt
 ```
+
+`LANE_REPOS` and `LANE_ROOT` have no default: lane stops with a message until both are set.
 
 Node 22.18+, git, and `gh` (logged in) for pull request and CI state. Written in TypeScript
 and run as is (Node strips the types, no build step); `npm install` only brings the type
@@ -21,8 +25,8 @@ checker. Install from a clone as above: Node does not run `.ts` files inside `no
 
 | Variable | Meaning |
 | --- | --- |
-| `LANE_REPOS` | `<repos folder>`: the folder holding the main clones; `<repo>` names one of them |
-| `LANE_ROOT` | `<lane root>`: the folder for the slots (and `.locks`) |
+| `LANE_REPOS` | Required. `<repos folder>`: the folder holding the main clones; `<repo>` names one of them |
+| `LANE_ROOT` | Required. `<lane root>`: the folder for the slots (and `.locks`) |
 | `LANE_MAX_SLOTS` | Slots per repository (default 4) |
 | `LANE_PORT_STRIDE` | Ports per slot (default 10): slot n owns the usual port + n x stride onwards |
 

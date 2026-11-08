@@ -1,9 +1,25 @@
-// Where lane works, read once from the environment.
+// Where lane works, from the environment. The two folders have no default: every machine keeps
+// its clones somewhere else, and a guessed folder would put slots in the wrong place.
+function folder(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`${name} is not set: point it at ${FOLDERS[name]} (see lane --help)`);
+  return value;
+}
+
+const FOLDERS: Record<string, string> = {
+  LANE_ROOT: 'the folder for the slots, e.g. setx LANE_ROOT D:/wt',
+  LANE_REPOS: 'the folder holding the main clones, e.g. setx LANE_REPOS D:/code',
+};
+
 export const config = {
   /** The folder that holds the lanes (slots). */
-  root: process.env.LANE_ROOT || 'F:/wt',
+  get root(): string {
+    return folder('LANE_ROOT');
+  },
   /** The folder that holds the main clones; `<repo>` names one of them. */
-  repos: process.env.LANE_REPOS || 'F:/ai-agent',
+  get repos(): string {
+    return folder('LANE_REPOS');
+  },
   /** Slots per repository; a full pool lists who holds what instead of taking a slot. */
   maxSlots: Number(process.env.LANE_MAX_SLOTS || 4),
   /** Ports per slot: slot n owns the usual port + n x stride, up to stride ports. */

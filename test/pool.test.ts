@@ -15,6 +15,7 @@ test('lane new takes numbered slots, each locked with its task', () => {
   assert.match(locked(main, a) ?? '', /^feat-a @ \d{4}-\d{2}-\d{2} \d{2}:\d{2}Z #[0-9a-f]{6}$/);
   assert.equal(git(a, 'branch', '--show-current'), 'feat-a');
   assert.throws(() => cmdNew('one', 'feat-a', { branch: 'other', install: false, open: false }), /feat-a already holds one-1/);
+  assert.throws(() => cmdNew('one', 'feat-a', { install: false, open: false }), /feat-a already holds one-1: work there/);
 });
 
 test('a slot given back is reused, keeping its ignored caches, and the task gets its old slot', () => {
