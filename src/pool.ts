@@ -59,6 +59,12 @@ export class SlotPool {
     return Lane.of(this.clone).filter((l) => l.slot !== null);
   }
 
+  /** The slot already held for `task`, if any: checked before a branch is chosen for it. */
+  heldFor(task: string): string | undefined {
+    const choice = pickSlot(this.slots().map((l) => this.info(l)), task, Infinity);
+    return choice.kind === 'held' ? slotName(this.clone.name, choice.n) : undefined;
+  }
+
   private info(l: Lane): SlotInfo {
     const n = l.slot ?? 0;
     if (!l.exists) return { n, locked: l.locked ?? '(folder missing)', dirty: 0, released: false, idleMs: 0 };

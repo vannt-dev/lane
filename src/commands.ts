@@ -22,9 +22,13 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   const clone = new MainClone(repo);
   const name = task ?? (opts.pr !== undefined ? `pr-${opts.pr}` : undefined);
   if (!name) throw new Error('lane new needs a task name, or --pr <number>');
+  const pool = new SlotPool(clone);
+  // Before targetFor: the task's own branch exists already, and "branch exists" hides the cause.
+  const held = pool.heldFor(name);
+  if (held) throw new Error(`${name} already holds ${held}: work there, or give it back with lane done ${held}`);
   clone.fetch();
   const target = targetFor(clone, name, opts);
-  const { lane, reused } = new SlotPool(clone).take(name, target);
+  const { lane, reused } = pool.take(name, target);
   const lease = lane.lease();
   log(`lane ${lane.name} (${reused ? 'reused' : 'new'} slot): ${target.describe()}, held for ${name}, lease ${lease}`);
   new LaneSetup(lane).run({ install: opts.install });
