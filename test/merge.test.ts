@@ -104,3 +104,15 @@ test('sync leaves a lane that has no history in common with the base', () => {
   assert.match(out, /no history in common with origin\/main/);
   assert.equal(git(lane, 'rev-parse', 'HEAD'), before);
 });
+
+test('sync leaves a lane whose work is already in the base, also without GitHub', () => {
+  const main = makeRepo('m9');
+  laneWith('m9', 'feat-a', 'a.txt', 'a\n');
+  laneWith('m9', 'feat-c', 'c.txt', 'c\n');
+  git(main, 'merge', '--squash', '-q', 'feat-a');
+  git(main, 'commit', '-q', '-m', 'squash feat-a');
+  git(main, 'push', '-q', 'origin', 'main');
+  const { out } = capture(() => cmdSync('m9', { push: false }));
+  assert.match(out, /m9-1 +skipped: work already in origin\/main \(lane clean gives it back\)/);
+  assert.match(out, /m9-2 +rebased, checks pass/);
+});
