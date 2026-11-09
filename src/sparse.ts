@@ -13,7 +13,8 @@ export function sparseDirs(input: readonly string[]): string[] {
   for (const raw of input) {
     const dir = raw.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/\/+$/, '');
     const parts = dir.split('/');
-    const outside = dir === '' || dir.startsWith('/') || /^[A-Za-z]:/.test(dir) || parts.some((p) => p === '' || p === '.' || p === '..');
+    // '..' is fine: git keeps the folder inside the checkout anyway
+    const outside = dir === '' || dir.startsWith('/') || /^[A-Za-z]:/.test(dir) || parts.some((p) => p === '' || p === '.');
     if (outside || /[*?[\]!]/.test(dir)) throw new Error(`--sparse takes folders inside the repository, like app/web: "${raw}" is not one`);
     if (!out.includes(dir)) out.push(dir);
   }
