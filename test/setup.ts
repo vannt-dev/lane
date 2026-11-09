@@ -6,3 +6,4 @@ const clean = gitEnv();
 for (const key of Object.keys(process.env)) {
   if (!(key in clean)) delete process.env[key];
 }
+// trial
