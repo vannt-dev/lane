@@ -81,3 +81,14 @@ test('path helpers ignore case and slash style (Windows)', { skip: process.platf
   assert.ok(samePath('F:/wt/a', 'f:\\WT\\a\\'));
   assert.ok(isInside('F:/wt/junto-x', 'F:\\wt'));
 });
+
+test('pickSlot with pools: a task reuses only its pool, numbers stay unique, each pool has its own max', () => {
+  const dev = slot(1);
+  const review = slot(2, { pool: 'review' });
+  assert.deepEqual(pickSlot([dev, review], 't', 4, 'review'), { kind: 'reuse', n: 2 });
+  assert.deepEqual(pickSlot([dev, review], 't', 4), { kind: 'reuse', n: 1 });
+  assert.deepEqual(pickSlot([slot(1, { locked: 'x' }), review], 't', 4), { kind: 'create', n: 3 }, 'not the review slot');
+  assert.deepEqual(pickSlot([dev, slot(2, { pool: 'review', locked: 'r' })], 't', 1, 'review'), { kind: 'full' });
+  assert.deepEqual(pickSlot([slot(1, { pool: 'review', locked: 'mine @ 2026-11-05 10:00Z' })], 'mine', 4), { kind: 'held', n: 1 },
+    'a task held in another pool is found');
+});

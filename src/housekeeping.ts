@@ -18,7 +18,8 @@ export function cmdList(opts: { local: boolean }): void {
     const local = !l.exists ? '-' : l.branch ? `${l.dirty()} changed, ${l.ahead()} unpushed` : `${l.dirty()} changed`;
     const dirs = l.exists ? currentDirs(l) : [];
     const branch = `${l.branch || '(detached)'}${dirs.length ? ` (sparse: ${dirs.join(', ')})` : ''}`;
-    return [l.name, l.stateText(), branch, local, prText];
+    const pool = l.exists ? l.meta().pool : undefined;
+    return [`${l.name}${pool ? ` (${pool})` : ''}`, l.stateText(), branch, local, prText];
   }));
 }
 

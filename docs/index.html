@@ -424,7 +424,7 @@
             <td data-i18n="cmd.new">
               Take a slot for a task: new branch, submodules, env files, install when lockfiles changed, notes for the agent.
               <code>--pr &lt;n&gt;</code> works on a pull request's branch; <code>--sparse &lt;folder&gt;</code> checks out only those
-              folders.
+              folders; <code>--pool review</code> keeps reviews in slots of their own.
             </td>
           </tr>
           <tr>
@@ -549,7 +549,7 @@ export LANE_ROOT="$HOME/wt"</pre>
             'Với <a href="https://github.com/vannt-dev/junto">junto</a>, mỗi lane giữ task và các quality gate riêng, và <code>/junto:status all</code> hiện task của mọi lane trong một bảng (hoặc một trang board với <code>/junto:status html</code>). junto cảnh báo khi base đã đổi sau lần verify của một lane, đúng bài học mà <code>lane sync</code> xử lý.',
           'cmd.h2': 'Các lệnh',
           'cmd.new':
-            'Lấy một slot cho task: nhánh mới, submodule, file env, cài thư viện khi lockfile đổi, ghi chú cho agent. <code>--pr &lt;n&gt;</code> làm trên nhánh của một pull request; <code>--sparse &lt;thư mục&gt;</code> chỉ lấy các thư mục đó.',
+            'Lấy một slot cho task: nhánh mới, submodule, file env, cài thư viện khi lockfile đổi, ghi chú cho agent. <code>--pr &lt;n&gt;</code> làm trên nhánh của một pull request; <code>--sparse &lt;thư mục&gt;</code> chỉ lấy các thư mục đó; <code>--pool review</code> để việc review dùng slot riêng.',
           'cmd.done': 'Trả slot khi việc đã được push hoặc merge.',
           'cmd.list': 'Mọi lane: đang giữ hay trống, nhánh, thay đổi chưa commit, pull request và CI.',
           'cmd.verify': 'Merge mọi lane đang mở với nhau rồi kiểm tra; sau một lần merge, rebase các lane còn lại và kiểm tra lại.',

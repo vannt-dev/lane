@@ -29,6 +29,25 @@ export const config = {
 };
 
 /**
+ * Slots per repository in a pool: `LANE_POOLS="review=2,ci=1"` names a pool's own max, any
+ * other pool (and the default one) has LANE_MAX_SLOTS. Read at each call.
+ */
+export function poolMax(pool: string): number {
+  for (const part of (process.env.LANE_POOLS ?? '').split(',')) {
+    const [name, n] = part.split('=').map((s) => s.trim());
+    if (pool && name === pool && Number(n) > 0) return Number(n);
+  }
+  return config.maxSlots;
+}
+
+/** A pool name: short, lowercase, so it reads well in `lane list` and in LANE_POOLS. */
+export function poolName(name: string | undefined): string {
+  if (!name) return '';
+  if (!/^[a-z0-9][a-z0-9-]{0,19}$/.test(name)) throw new Error(`--pool takes a short lowercase name like review: "${name}" is not one`);
+  return name;
+}
+
+/**
  * Speed flags passed per command, never written to the repository's config: checkout with
  * all cores, and remember which folders have no untracked files.
  */
