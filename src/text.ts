@@ -20,6 +20,16 @@ interface HoldInfo {
   slot: number | null;
   lease: string | null;
   stride: number;
+  /** The folders a sparse lane has; none when it has every file. */
+  sparse?: readonly string[];
+}
+
+/** A sparse lane has some folders only: say which, and how to get one more. */
+function sparseRule(dirs: readonly string[]): string {
+  return (
+    `- This lane has only these folders (and the files at the root): ${dirs.map((d) => `\`${d}\``).join(', ')}. ` +
+    'Need another? `git sparse-checkout add <folder>`. Not `git sparse-checkout disable`: it checks out the whole repository.'
+  );
 }
 
 /** Lanes run servers side by side: slot n owns the ports usual + n × stride … + stride - 1. */
@@ -40,6 +50,7 @@ const SHARED_RULES = [
 function holdRules(h: HoldInfo): string[] {
   const done = h.lease ? `\`lane done --lease ${h.lease}\`` : '`lane done`';
   return [
+    ...(h.sparse?.length ? [sparseRule(h.sparse)] : []),
     ...(h.slot ? [portRule(h.slot, h.stride)] : []),
     `- When the work is pushed or merged, ${done} gives this slot back (its folder and caches stay for the next task).`,
   ];

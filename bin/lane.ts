@@ -16,6 +16,9 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       branch (default: the task name) from origin/develop if it exists, else the default
       branch. Submodules, untracked .env-type files, dependencies (only when the lockfiles
       changed), CLAUDE.local.md; --open starts Claude Code. Prints the hold's lease.
+      --sparse <folder> (repeatable): check out only those folders and the root files, for
+      a big repository; a .lanesparse file in the main clone sets them for every task,
+      --no-sparse takes everything. A reused slot gets what the new task asks for.
   lane new <repo> --pr <n>   A slot on an existing pull request's branch (to test or finish it)
   lane done [<lane>] [--lease ID] [--force]
                              Give the slot back once its work is pushed or merged; with --lease,
@@ -63,6 +66,8 @@ const options = {
     pr: { type: 'string' },
     lease: { type: 'string' },
     'no-install': { type: 'boolean', default: false },
+    sparse: { type: 'string', multiple: true },
+    'no-sparse': { type: 'boolean', default: false },
     open: { type: 'boolean', default: false },
     local: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
@@ -101,7 +106,10 @@ function main(): number {
   }
   const pr = values.pr === undefined ? undefined : whole(values.pr, '--pr', 1, Number.MAX_SAFE_INTEGER);
   if (cmd === 'new' && a !== undefined && extra.length === 0 && (b !== undefined || pr !== undefined)) {
-    cmdNew(a, b, { base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open });
+    cmdNew(a, b, {
+      base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open,
+      sparse: values.sparse, full: values['no-sparse'],
+    });
   } else if (cmd === 'list') cmdList({ local: values.local });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });

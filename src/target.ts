@@ -1,8 +1,9 @@
 // Where a lane's HEAD goes: each kind knows how to make a new worktree there and how to move
 // a reused slot there.
-import type { Checkout, MainClone } from './checkout.ts';
+import { Checkout, type MainClone } from './checkout.ts';
 import { FAST } from './config.ts';
 import { tryRun } from './proc.ts';
+import { applySparse } from './sparse.ts';
 import { log } from './text.ts';
 
 export abstract class Target {
@@ -12,13 +13,26 @@ export abstract class Target {
   /** `git switch` arguments. */
   protected abstract switchArgs(): string[];
 
-  /** A new worktree at `dest`, locked from its first moment. */
-  add(clone: MainClone, dest: string, reason: string): void {
-    clone.git(...FAST, 'worktree', 'add', '--lock', '--reason', reason, ...this.addArgs(dest));
+  /**
+   * A new worktree at `dest`, locked from its first moment. With `dirs` it starts empty, is
+   * limited to those folders, and only then gets its files: a big repository is never
+   * checked out whole first.
+   */
+  add(clone: MainClone, dest: string, reason: string, dirs: readonly string[] = []): void {
+    const empty = dirs.length > 0 ? ['--no-checkout'] : [];
+    clone.git(...FAST, 'worktree', 'add', '--lock', '--reason', reason, ...empty, ...this.addArgs(dest));
+    if (dirs.length === 0) return;
+    const slot = new Checkout(dest);
+    applySparse(slot, dirs);
+    slot.git(...FAST, 'read-tree', '-mu', 'HEAD');
   }
 
-  /** Moves a free slot (clean, detached or on an old branch) here. */
-  switchIn(slot: Checkout): void {
+  /**
+   * Moves a free slot (clean, detached or on an old branch) here, limited to `dirs` or whole
+   * again. The folders are set first, so the switch writes only what the task gets.
+   */
+  switchIn(slot: Checkout, dirs: readonly string[] = []): void {
+    applySparse(slot, dirs);
     slot.git(...FAST, 'switch', ...this.switchArgs());
   }
 }
