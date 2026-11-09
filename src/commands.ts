@@ -40,7 +40,7 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   if (dirs.length > 0) {
     log(`sparse: ${dirs.join(', ')} (and the files at the root)`);
     const missing = missingDirs(lane, dirs);
-    if (missing.length > 0) log(`note: not in this commit: ${missing.join(', ')}`);
+    if (missing.length > 0) log(`note: no such folder in this commit: ${missing.join(', ')} (--sparse takes folders, not files)`);
   }
   new LaneSetup(lane).run({ install: opts.install });
   if (opts.open) openClaude(lane.dir);

@@ -7,6 +7,7 @@ import { LOCKFILES } from './detect.ts';
 import { Lane } from './lane.ts';
 import { SlotPool } from './pool.ts';
 import { LaneSetup } from './setup.ts';
+import { currentDirs } from './sparse.ts';
 import { Detached } from './target.ts';
 import { log, printTable } from './text.ts';
 
@@ -119,10 +120,12 @@ class Integration {
   private checkAndPush(l: Lane, opts: IntegrateOptions & { push: boolean }, what: string): { note: string; bad?: boolean } {
     const result = runChecks(l, checksFor(this.clone, l, opts.cmds));
     if (!result.ok) return { note: `${what}; "${result.failed}" FAILS on top of ${this.base}`, bad: true };
-    if (!l.hasRef(`refs/remotes/origin/${l.branch}`)) return { note: `${what}, checks pass` };
-    if (!opts.push) return { note: `${what}, checks pass; push with --force-with-lease (or lane sync --push)` };
+    // A sparse lane's checks see its folders only: a break elsewhere would not show.
+    const pass = currentDirs(l).length > 0 ? 'checks pass on its folders only (lane verify checks the whole)' : 'checks pass';
+    if (!l.hasRef(`refs/remotes/origin/${l.branch}`)) return { note: `${what}, ${pass}` };
+    if (!opts.push) return { note: `${what}, ${pass}; push with --force-with-lease (or lane sync --push)` };
     const pushed = l.tryGit('push', '--force-with-lease', 'origin', l.branch) !== null;
-    return { note: `${what}, checks pass, ${pushed ? 'pushed' : 'PUSH FAILED'}`, bad: !pushed };
+    return { note: `${what}, ${pass}, ${pushed ? 'pushed' : 'PUSH FAILED'}`, bad: !pushed };
   }
 }
 
