@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/vannt-dev/lane/compare/v0.8.1...v0.9.0) (2026-11-09)
+
+
+### Features
+
+* **new:** npm dependencies as hard links from a lane on the same lockfile ([#18](https://github.com/vannt-dev/lane/issues/18)) ([1424a4e](https://github.com/vannt-dev/lane/commit/1424a4e94fde7b9ef364db2d2714e664ad18f064))
+
 ## [0.8.1](https://github.com/vannt-dev/lane/compare/v0.8.0...v0.8.1) (2026-11-09)
 
 
