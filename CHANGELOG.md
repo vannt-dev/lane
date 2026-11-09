@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/vannt-dev/lane/compare/v0.9.0...v0.10.0) (2026-11-09)
+
+
+### Features
+
+* **new:** pools keep reviews and other work in separate slots ([#20](https://github.com/vannt-dev/lane/issues/20)) ([51477f7](https://github.com/vannt-dev/lane/commit/51477f71c51f99f588724bf89eced9e7294e7232))
+
 ## [0.9.0](https://github.com/vannt-dev/lane/compare/v0.8.1...v0.9.0) (2026-11-09)
 
 
