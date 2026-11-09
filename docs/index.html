@@ -356,7 +356,8 @@
             <p data-i18n="h.1">
               Numbered worktrees <code>&lt;repo&gt;-&lt;n&gt;</code> that come back to a pool. A task gets the slot it had before, else a
               free one; dependencies are installed again only when a lockfile changed, so a new task starts in seconds. In a big
-              repository a slot can hold only the folders its task needs (<code>--sparse</code>).
+              repository a slot can hold only the folders its task needs (<code>--sparse</code>), and npm dependencies can come as
+              hard links from a lane on the same lockfile (<code>--link-deps</code>).
             </p>
           </div>
           <div class="card">
@@ -525,7 +526,7 @@ export LANE_ROOT="$HOME/wt"</pre>
             '<code>git worktree</code> cho mỗi task một thư mục riêng. Phần khó đến sau đó: thư mục mới nào cũng phải cài lại thư viện, hai agent tranh một máy ảo hay một cổng, bốn bản build chạy cùng lúc làm cạn RAM, và hai nhánh merge sạch về mặt chữ nhưng ghép lại thì hỏng.',
           'h.1.h': 'Slot dùng lại',
           'h.1':
-            'Các worktree đánh số <code>&lt;repo&gt;-&lt;n&gt;</code> quay về một pool. Task lấy lại đúng slot nó từng dùng, không có thì lấy slot trống; thư viện chỉ cài lại khi lockfile đổi, nên task mới bắt đầu trong vài giây. Với repository lớn, slot có thể chỉ lấy các thư mục task cần (<code>--sparse</code>).',
+            'Các worktree đánh số <code>&lt;repo&gt;-&lt;n&gt;</code> quay về một pool. Task lấy lại đúng slot nó từng dùng, không có thì lấy slot trống; thư viện chỉ cài lại khi lockfile đổi, nên task mới bắt đầu trong vài giây. Với repository lớn, slot có thể chỉ lấy các thư mục task cần (<code>--sparse</code>), và thư viện npm có thể lấy bằng hard link từ một lane cùng lockfile (<code>--link-deps</code>).',
           'h.2.h': 'Giữ slot bằng lease',
           'h.2':
             'Slot được giữ bằng <code>git worktree lock</code> và đọc lại theo lease của lần giữ này, nên hai phiên không bao giờ lấy cùng một slot. <code>lane done</code> không cho trả slot khi việc chưa có trên remote.',

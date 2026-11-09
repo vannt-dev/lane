@@ -24,6 +24,8 @@ export const config = {
   maxSlots: Number(process.env.LANE_MAX_SLOTS || 4),
   /** Ports per slot: slot n owns the usual port + n x stride, up to stride ports. */
   portStride: Number(process.env.LANE_PORT_STRIDE || 10),
+  /** npm dependencies as hard links from a lane on the same lockfile (`--link-deps` for one lane). */
+  linkDeps: process.env.LANE_LINK_DEPS === '1',
 };
 
 /**

@@ -20,6 +20,8 @@ interface NewOptions extends TargetOptions {
   sparse?: string[];
   /** Every file, whatever `.lanesparse` says (`--no-sparse`). */
   full?: boolean;
+  /** npm dependencies as hard links from a lane on the same lockfile (`--link-deps`). */
+  linkDeps?: boolean;
 }
 
 /** Takes a slot for a task (see SlotPool.take) and sets it up; returns its folder. */
@@ -42,7 +44,7 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
     const missing = missingDirs(lane, dirs);
     if (missing.length > 0) log(`note: no such folder in this commit: ${missing.join(', ')} (--sparse takes folders, not files)`);
   }
-  new LaneSetup(lane).run({ install: opts.install });
+  new LaneSetup(lane).run({ install: opts.install, linkDeps: opts.linkDeps });
   if (opts.open) openClaude(lane.dir);
   else log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
   return lane.dir;

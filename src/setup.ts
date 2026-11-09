@@ -2,8 +2,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config, COPY_DEFAULT } from './config.ts';
-import { HEAVY_HOOKS, HOOK_NAMES, installCommands, installStamp, LOCKFILES } from './detect.ts';
-import type { Lane } from './lane.ts';
+import { HEAVY_HOOKS, HOOK_NAMES, installCommands } from './detect.ts';
+import { Lane } from './lane.ts';
+import { findSource, linkBlocker, linkTree, lockStamp, nodeModulesDirs } from './linkdeps.ts';
 import { runLive } from './proc.ts';
 import { currentDirs, inCone } from './sparse.ts';
 import { hookWrapper, laneNotes, listLines, log, NOTES_HEADER } from './text.ts';
@@ -16,10 +17,10 @@ export class LaneSetup {
   }
 
   /** Submodules, untracked local files, dependencies, the lane notes and the hook wrappers. */
-  run(opts: { install: boolean }): void {
+  run(opts: { install: boolean; linkDeps?: boolean }): void {
     this.submodules();
     this.copyLocalFiles();
-    if (opts.install) this.install();
+    if (opts.install) this.install(opts.linkDeps ?? config.linkDeps);
     this.writeNotes();
     this.wrapHeavyHooks();
   }
@@ -63,19 +64,20 @@ export class LaneSetup {
     }
   }
 
-  private stamp(): string {
-    const present = LOCKFILES.filter((f) => fs.existsSync(path.join(this.lane.dir, f)));
-    return installStamp(present.map((name) => ({ name, text: fs.readFileSync(path.join(this.lane.dir, name), 'utf8') })));
-  }
-
-  /** Installs dependencies, unless this slot already installed them from the same lockfiles. */
-  install(): void {
+  /**
+   * Installs dependencies, unless this slot already installed them from the same lockfiles.
+   * With `linkDeps`, npm's node_modules comes as hard links from a lane installed from the same
+   * lockfile when there is one (see linkdeps.ts), instead of `npm ci`.
+   */
+  install(linkDeps = config.linkDeps): void {
     const cmds = installCommands(fs.readdirSync(this.lane.dir));
     if (cmds.length === 0) return;
-    const stamp = this.stamp();
+    const stamp = lockStamp(this.lane.dir);
     if (this.lane.meta().installStamp === stamp) return log('dependencies: lockfiles unchanged since this slot installed them');
+    const npm = (c: string) => c.startsWith('npm ci');
+    const rest = linkDeps && cmds.some(npm) && this.linkDeps(stamp) ? cmds.filter((c) => !npm(c)) : cmds;
     const sparse = currentDirs(this.lane).length > 0;
-    for (const c of cmds) {
+    for (const c of rest) {
       log(`> ${c}`);
       if (runLive(c, this.lane.dir)) continue;
       // A workspace outside the folders makes a monorepo's install fail; the lane still works.
@@ -86,6 +88,31 @@ export class LaneSetup {
       throw new Error(`"${c}" failed in ${this.lane.dir}; the lane is kept, fix and rerun it there`);
     }
     this.lane.setMeta({ installStamp: stamp });
+  }
+
+  /** node_modules as hard links from a lane on the same lockfile; false when npm ci must run. */
+  private linkDeps(stamp: string): boolean {
+    const dir = this.lane.dir;
+    const why = linkBlocker(dir);
+    if (why) return (log(`dependencies: not linked: ${why}`), false);
+    const source = findSource(this.lane, Lane.of(this.lane.clone), stamp);
+    if (!source) return (log('dependencies: no other lane installed from this lockfile yet'), false);
+    // The root node_modules and those of workspaces (in a sparse lane, of the workspaces it has).
+    const lock = fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8');
+    const dirs = nodeModulesDirs(lock).filter((d) =>
+      fs.existsSync(path.join(source.dir, d)) && fs.existsSync(path.dirname(path.join(dir, d))));
+    const clear = () => dirs.forEach((d) => fs.rmSync(path.join(dir, d), { recursive: true, force: true }));
+    try {
+      clear();
+      const files = dirs.reduce((n, d) => n + linkTree(path.join(source.dir, d), path.join(dir, d), source.dir, dir), 0);
+      const where = dirs.length > 1 ? `, ${dirs.length} node_modules folders` : '';
+      log(`dependencies: linked from ${source.name} (${files} files, hard links${where})`);
+      return true;
+    } catch (e) {
+      clear();
+      log(`dependencies: could not link from ${source.name} (${e instanceof Error ? e.message : String(e)}); installing`);
+      return false;
+    }
   }
 
   /** CLAUDE.local.md with the lane rules, ignored by git in every worktree of the repository. */
