@@ -84,6 +84,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_MAX_SLOTS` | Slots per repository (default 4) |
 | `LANE_PORT_STRIDE` | Ports per slot (default 10): slot n owns the usual port + n x stride onwards |
 | `LANE_LINK_DEPS` | `1`: every `lane new` links npm dependencies from a lane on the same lockfile (see Dependencies from another lane) |
+| `LANE_POOLS` | Max slots of named pools, e.g. `review=2,ci=1` (see Pools) |
 
 ## Commands
 
@@ -199,6 +200,20 @@ lane new bigrepo feat/web --sparse app/web --sparse docs
 - `lane list` shows a slot's folders. `CLAUDE.local.md` and `lane brief` name them and tell the
   agent to add one with `git sparse-checkout add <folder>`, not to turn sparse off.
 - A folder missing from the commit (a typo) is named when the lane is made.
+
+## Pools: reviews apart from other work
+
+```sh
+lane new myrepo --pr 42 --pool review
+```
+
+- A slot belongs to the pool it was made in, for good. A task reuses free slots of its own
+  pool only, so a review never takes the slot (and caches) of a feature and the other way round.
+- Each pool has its own max: `LANE_POOLS="review=2"`; any other pool, and the default one, has
+  `LANE_MAX_SLOTS`. A full pool lists its own slots.
+- Slot numbers are shared by all pools, so ports never clash. `lane list` shows the pool after
+  the slot's name. Slots made before pools existed are in the default pool.
+- Holds still decide what is safe: a slot held in any pool is never taken or cleaned.
 
 ## Dependencies from another lane
 

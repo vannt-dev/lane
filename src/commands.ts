@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process';
 import { MainClone } from './checkout.ts';
 import { checksFor } from './checks.ts';
-import { config } from './config.ts';
+import { config, poolName } from './config.ts';
 import { findLane } from './find.ts';
 import { Lane } from './lane.ts';
 import { SlotPool } from './pool.ts';
@@ -22,6 +22,8 @@ interface NewOptions extends TargetOptions {
   full?: boolean;
   /** npm dependencies as hard links from a lane on the same lockfile (`--link-deps`). */
   linkDeps?: boolean;
+  /** The pool to take a slot from (`--pool review`); none for the default pool. */
+  pool?: string;
 }
 
 /** Takes a slot for a task (see SlotPool.take) and sets it up; returns its folder. */
@@ -34,11 +36,13 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   const held = pool.heldFor(name);
   if (held) throw new Error(`${name} already holds ${held}: work there, or give it back with lane done ${held}`);
   const dirs = chosenDirs(clone, opts);
+  const group = poolName(opts.pool);
   clone.fetch();
   const target = targetFor(clone, name, opts);
-  const { lane, reused } = pool.take(name, target, dirs);
+  const { lane, reused } = pool.take(name, target, dirs, group);
   const lease = lane.lease();
-  log(`lane ${lane.name} (${reused ? 'reused' : 'new'} slot): ${target.describe()}, held for ${name}, lease ${lease}`);
+  const kind = `${reused ? 'reused' : 'new'} slot${group ? ` of pool ${group}` : ''}`;
+  log(`lane ${lane.name} (${kind}): ${target.describe()}, held for ${name}, lease ${lease}`);
   if (dirs.length > 0) {
     log(`sparse: ${dirs.join(', ')} (and the files at the root)`);
     const missing = missingDirs(lane, dirs);

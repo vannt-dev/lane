@@ -15,6 +15,8 @@ export interface SlotMeta {
   releasedAt?: number;
   /** Stamp of the lockfiles the slot last installed from. */
   installStamp?: string;
+  /** The pool the slot belongs to (`lane new --pool`); none for the default pool. */
+  pool?: string;
 }
 
 function metaFile(dir: string): string | null {

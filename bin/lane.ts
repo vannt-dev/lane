@@ -21,6 +21,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       --no-sparse takes everything. A reused slot gets what the new task asks for.
       --link-deps (or LANE_LINK_DEPS=1): npm's node_modules as hard links from a lane
       installed from the same lockfile, instead of npm ci; each lane owns its folders.
+      --pool <name> (e.g. review): a slot of that pool only, so reviews and other work never
+      take each other's slots; LANE_POOLS="review=2" sets a pool's own max.
   lane new <repo> --pr <n>   A slot on an existing pull request's branch (to test or finish it)
   lane done [<lane>] [--lease ID] [--force]
                              Give the slot back once its work is pushed or merged; with --lease,
@@ -71,6 +73,7 @@ const options = {
     sparse: { type: 'string', multiple: true },
     'no-sparse': { type: 'boolean', default: false },
     'link-deps': { type: 'boolean' },
+    pool: { type: 'string' },
     open: { type: 'boolean', default: false },
     local: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
@@ -111,7 +114,7 @@ function main(): number {
   if (cmd === 'new' && a !== undefined && extra.length === 0 && (b !== undefined || pr !== undefined)) {
     cmdNew(a, b, {
       base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open,
-      sparse: values.sparse, full: values['no-sparse'], linkDeps: values['link-deps'],
+      sparse: values.sparse, full: values['no-sparse'], linkDeps: values['link-deps'], pool: values.pool,
     });
   } else if (cmd === 'list') cmdList({ local: values.local });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
