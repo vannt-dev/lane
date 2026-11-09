@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/vannt-dev/lane/compare/v0.8.0...v0.8.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **sparse:** name a file given as a folder; sync says checks saw the folders only ([#14](https://github.com/vannt-dev/lane/issues/14)) ([c9d5651](https://github.com/vannt-dev/lane/commit/c9d565156a89210f08c4f94f158e7ae4cd5db4a4))
+
 ## [0.8.0](https://github.com/vannt-dev/lane/compare/v0.7.1...v0.8.0) (2026-11-09)
 
 
