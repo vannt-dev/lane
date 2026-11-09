@@ -32,9 +32,12 @@ export class Checkout {
     return this.tryGit('rev-parse', '-q', '--verify', ref) !== null;
   }
 
-  /** Uncommitted and untracked files. */
+  /**
+   * Uncommitted and untracked files. Without optional locks: a plain `git status` may refresh
+   * and rewrite the index, and the index's time is how lane tells that someone worked in a slot.
+   */
   dirty(): number {
-    const status = this.tryGit('status', '--porcelain') ?? '';
+    const status = this.tryGit('--no-optional-locks', 'status', '--porcelain') ?? '';
     return status ? status.split(/\r?\n/).length : 0;
   }
 

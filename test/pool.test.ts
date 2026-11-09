@@ -93,3 +93,15 @@ test('lane port gives each slot its own range of ports', () => {
   }
   assert.match(fs.readFileSync(path.join(b, 'CLAUDE.local.md'), 'utf8'), /slot 2: its ports are the usual port \+ 20 to \+ 29/);
 });
+
+test('a slot given back stays free after lane list looks at it (git status must not touch the index)', () => {
+  makeRepo('eight');
+  const a = laneWith('eight', 'feat-a', 'a.txt', 'a\n');
+  git(a, 'push', '-q', 'origin', 'feat-a');
+  capture(() => cmdDone('eight-1', { force: false }));
+  // a file whose mtime is the index's own second makes git status refresh and rewrite the index
+  fs.writeFileSync(path.join(a, 'base.txt'), fs.readFileSync(path.join(a, 'base.txt')));
+  capture(() => lane.cmdList({ local: true }));
+  const again = take('eight', 'feat-b');
+  assert.equal(path.basename(again), 'eight-1', 'the given-back slot is reused');
+});
