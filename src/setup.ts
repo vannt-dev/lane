@@ -5,6 +5,7 @@ import { config, COPY_DEFAULT } from './config.ts';
 import { HEAVY_HOOKS, HOOK_NAMES, installCommands, installStamp, LOCKFILES } from './detect.ts';
 import type { Lane } from './lane.ts';
 import { runLive } from './proc.ts';
+import { currentDirs, inCone } from './sparse.ts';
 import { hookWrapper, laneNotes, listLines, log, NOTES_HEADER } from './text.ts';
 
 export class LaneSetup {
@@ -30,10 +31,15 @@ export class LaneSetup {
       log('WARNING: submodules did not load (a private one needs access); the build may fail');
   }
 
-  /** Untracked files of the main clone the work needs (`.env` and the like), when missing. */
+  /**
+   * Untracked files of the main clone the work needs (`.env` and the like), when missing. A
+   * sparse lane gets only those inside its folders.
+   */
   private copyLocalFiles(): void {
     const clone = this.lane.clone;
+    const dirs = currentDirs(this.lane);
     for (const file of [...COPY_DEFAULT, ...listLines(clone.readFile('.lanecopy') ?? '')]) {
+      if (!inCone(file, dirs)) continue;
       const from = path.join(clone.dir, file);
       const to = path.join(this.lane.dir, file);
       if (fs.existsSync(to) || !fs.existsSync(from) || !fs.statSync(from).isFile()) continue;
@@ -73,7 +79,8 @@ export class LaneSetup {
       fs.mkdirSync(path.dirname(exclude), { recursive: true });
       fs.appendFileSync(exclude, `${cur && !cur.endsWith('\n') ? '\n' : ''}/CLAUDE.local.md\n`);
     }
-    fs.writeFileSync(file, laneNotes({ slot: this.lane.slot, lease: this.lane.lease(), stride: config.portStride }));
+    const notes = { slot: this.lane.slot, lease: this.lane.lease(), stride: config.portStride, sparse: currentDirs(this.lane) };
+    fs.writeFileSync(file, laneNotes(notes));
   }
 
   /**

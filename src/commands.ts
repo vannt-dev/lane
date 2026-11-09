@@ -7,6 +7,7 @@ import { findLane } from './find.ts';
 import { Lane } from './lane.ts';
 import { SlotPool } from './pool.ts';
 import { LaneSetup } from './setup.ts';
+import { chosenDirs, currentDirs, missingDirs } from './sparse.ts';
 import { ABANDONED_MS } from './stale.ts';
 import { targetFor, type TargetOptions } from './target.ts';
 import { briefText, log } from './text.ts';
@@ -15,6 +16,10 @@ import { age } from './worktrees.ts';
 interface NewOptions extends TargetOptions {
   install: boolean;
   open: boolean;
+  /** Only these folders (`--sparse`); else `.lanesparse`, else the whole repository. */
+  sparse?: string[];
+  /** Every file, whatever `.lanesparse` says (`--no-sparse`). */
+  full?: boolean;
 }
 
 /** Takes a slot for a task (see SlotPool.take) and sets it up; returns its folder. */
@@ -26,11 +31,17 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   // Before targetFor: the task's own branch exists already, and "branch exists" hides the cause.
   const held = pool.heldFor(name);
   if (held) throw new Error(`${name} already holds ${held}: work there, or give it back with lane done ${held}`);
+  const dirs = chosenDirs(clone, opts);
   clone.fetch();
   const target = targetFor(clone, name, opts);
-  const { lane, reused } = pool.take(name, target);
+  const { lane, reused } = pool.take(name, target, dirs);
   const lease = lane.lease();
   log(`lane ${lane.name} (${reused ? 'reused' : 'new'} slot): ${target.describe()}, held for ${name}, lease ${lease}`);
+  if (dirs.length > 0) {
+    log(`sparse: ${dirs.join(', ')} (and the files at the root)`);
+    const missing = missingDirs(lane, dirs);
+    if (missing.length > 0) log(`note: not in this commit: ${missing.join(', ')}`);
+  }
   new LaneSetup(lane).run({ install: opts.install });
   if (opts.open) openClaude(lane.dir);
   else log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
@@ -105,5 +116,6 @@ export function cmdBrief(name?: string): void {
     slot: lane.slot,
     lease: lane.lease(),
     stride: config.portStride,
+    sparse: currentDirs(lane),
   }));
 }

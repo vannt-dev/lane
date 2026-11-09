@@ -5,6 +5,7 @@ import { findLane } from './find.ts';
 import { leftovers, rmLaneFolder } from './fsutil.ts';
 import type { Pr } from './github.ts';
 import { Lane } from './lane.ts';
+import { currentDirs } from './sparse.ts';
 import { log, printTable } from './text.ts';
 
 export function cmdList(opts: { local: boolean }): void {
@@ -15,7 +16,9 @@ export function cmdList(opts: { local: boolean }): void {
     const prText = pr === undefined ? '-' : pr ? `#${pr.number} ${pr.state.toLowerCase()} ${pr.checks}` : 'no PR';
     // A detached slot has no branch to push: its commits (verify's merges) go when it is taken again.
     const local = !l.exists ? '-' : l.branch ? `${l.dirty()} changed, ${l.ahead()} unpushed` : `${l.dirty()} changed`;
-    return [l.name, l.stateText(), l.branch || '(detached)', local, prText];
+    const dirs = l.exists ? currentDirs(l) : [];
+    const branch = `${l.branch || '(detached)'}${dirs.length ? ` (sparse: ${dirs.join(', ')})` : ''}`;
+    return [l.name, l.stateText(), branch, local, prText];
   }));
 }
 

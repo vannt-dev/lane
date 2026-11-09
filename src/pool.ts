@@ -81,8 +81,9 @@ export class SlotPool {
    * Takes a slot for `task`, locks it and puts it on the target. A full pool prints who holds
    * what and refuses. The claim is a lock read back with this hold's lease: when another
    * session locked or made the chosen slot first, lane leaves it alone and looks again.
+   * `dirs` limits the slot to those folders (sparse); none gives it every file.
    */
-  take(task: string, target: Target): { lane: Lane; reused: boolean } {
+  take(task: string, target: Target, dirs: readonly string[] = []): { lane: Lane; reused: boolean } {
     for (let attempt = 0; attempt < 3; attempt++) {
       const slots = this.slots();
       const choice = pickSlot(slots.map((l) => this.info(l)), task, config.maxSlots);
@@ -96,11 +97,11 @@ export class SlotPool {
       const lease = randomBytes(3).toString('hex');
       const reason = lockReason(task, new Date(), lease);
       const locked = choice.kind === 'create'
-        ? this.create(choice.n, dest, reason, target)
+        ? this.create(choice.n, dest, reason, target, dirs)
         : this.clone.tryGit('worktree', 'lock', '--reason', reason, dest) !== null;
       const mine = locked ? this.heldUnder(choice.n, lease) : undefined;
       if (!mine) continue;
-      if (choice.kind === 'reuse') this.switchOrUnlock(mine, lease, target);
+      if (choice.kind === 'reuse') this.switchOrUnlock(mine, lease, target, dirs);
       const lane = this.slots().find((l) => l.slot === choice.n) ?? mine;
       lane.setMeta({ task, lease, start: lane.git('rev-parse', 'HEAD'), released: false });
       return { lane, reused: choice.kind === 'reuse' };
@@ -114,10 +115,10 @@ export class SlotPool {
   }
 
   /** A new slot, locked from its first moment; false when another session made it first. */
-  private create(n: number, dest: string, reason: string, target: Target): boolean {
+  private create(n: number, dest: string, reason: string, target: Target, dirs: readonly string[]): boolean {
     try {
       this.clearFolder(dest);
-      target.add(this.clone, dest, reason);
+      target.add(this.clone, dest, reason, dirs);
       return true;
     } catch (e) {
       if (this.slots().some((l) => l.slot === n)) return false;
@@ -134,9 +135,9 @@ export class SlotPool {
   }
 
   /** Moves a reused slot to the target; on failure gives the lock back, only if still ours. */
-  private switchOrUnlock(slot: Lane, lease: string, target: Target): void {
+  private switchOrUnlock(slot: Lane, lease: string, target: Target, dirs: readonly string[]): void {
     try {
-      target.switchIn(slot);
+      target.switchIn(slot, dirs);
     } catch (e) {
       if (slot.slot !== null && this.heldUnder(slot.slot, lease)) this.clone.tryGit('worktree', 'unlock', slot.dir);
       throw e;

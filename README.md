@@ -88,7 +88,7 @@ lane list                         # every lane: held or free, branch, changes, P
 
 | Command | What it does |
 | --- | --- |
-| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (`--no-install` to skip), writes `CLAUDE.local.md`. `--open` starts Claude Code in a new terminal tab. |
+| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (`--no-install` to skip), writes `CLAUDE.local.md`. `--open` starts Claude Code in a new terminal tab. `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
 | `lane new <repo> --pr <n>` | The same, on an existing pull request's branch (tracking it), or on a local `pr-<n>` branch for a PR from a fork. |
 | `lane done [<lane>] [--lease ID] [--force]` | Gives the slot back once its work is safe: nothing uncommitted, and its commits on the remote or merged (see Merged). Detaches, deletes the local branch when safe, unlocks. With `--lease`, only while the slot is still held under that lease: a late give-back from a task that already ended never frees the task that came after. `--force` keeps unpushed commits on the local branch. |
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |
@@ -168,6 +168,28 @@ hold they were made under ends (the slot given back or taken for another task).
   lane, its own hooks folder (`core.hooksPath` in the worktree's config): `pre-push` waits for
   a build slot, the other hooks run as before.
 - `verify` and `sync` merge and rebase with the repository's hooks off.
+
+## Big repositories: sparse slots
+
+A task that needs a few folders of a big repository does not have to check out all of it:
+
+```sh
+lane new bigrepo feat/web --sparse app/web --sparse docs
+```
+
+- The slot gets those folders and the files at the root (git's cone mode). A new slot starts
+  empty and gets only those files, so a big repository is never written out whole first.
+- The setting lives in the slot's own worktree config: the main clone and the other lanes keep
+  every file.
+- An untracked `.lanesparse` in the main clone (one folder per line, `#` for comments) gives
+  every task of that repository its folders; `--sparse` replaces them for one task and
+  `--no-sparse` takes everything.
+- A reused slot gets what the new task asks for: other folders, or every file again.
+  `lane verify` always works on a whole checkout.
+- Untracked files from `.lanecopy` are copied only when they fall inside the folders.
+- `lane list` shows a slot's folders. `CLAUDE.local.md` and `lane brief` name them and tell the
+  agent to add one with `git sparse-checkout add <folder>`, not to turn sparse off.
+- A folder missing from the commit (a typo) is named when the lane is made.
 
 ## Known
 
