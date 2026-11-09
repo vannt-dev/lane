@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/vannt-dev/lane/compare/v0.10.0...v0.10.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* lane's git status no longer rewrites a slot's index ([#22](https://github.com/vannt-dev/lane/issues/22)) ([df3efd3](https://github.com/vannt-dev/lane/commit/df3efd3812d22f24e199ead4c1996d5f79538af0))
+
 ## [0.10.0](https://github.com/vannt-dev/lane/compare/v0.9.0...v0.10.0) (2026-11-09)
 
 
