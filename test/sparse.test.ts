@@ -85,7 +85,7 @@ test('.lanesparse sets the folders for a repository; --no-sparse takes everythin
   assert.throws(() => newLane('sp3', 'feat-c', { sparse: ['docs'], full: true }), /--sparse and --no-sparse/);
 });
 
-test('a folder that is not in the commit is named; local files outside the folders are not copied', () => {
+test('a folder not in the commit, or a file, is named; local files outside the folders are not copied', () => {
   const main = makeTree('sp4');
   fs.writeFileSync(path.join(main, '.lanecopy'), 'tools/local.env\napp/web/local.env\n');
   fs.writeFileSync(path.join(main, 'tools', 'local.env'), 'T=1\n');
@@ -93,9 +93,24 @@ test('a folder that is not in the commit is named; local files outside the folde
   fs.mkdirSync(path.join(main, '.claude'));
   fs.writeFileSync(path.join(main, '.claude', 'settings.local.json'), '{}\n');
   fs.appendFileSync(path.join(main, '.git', 'info', 'exclude'), '.lanecopy\nlocal.env\n.claude/\n');
-  const { result: dir, out } = newLane('sp4', 'feat-a', { sparse: ['app/web', 'nope'] });
-  assert.match(out, /not in this commit: nope/);
+  const { result: dir, out } = newLane('sp4', 'feat-a', { sparse: ['app/web', 'nope', 'base.txt'] });
+  assert.match(out, /no such folder in this commit: nope, base\.txt \(--sparse takes folders, not files\)/);
   assert.ok(has(dir, 'app/web/local.env'));
   assert.ok(!has(dir, 'tools/local.env'), 'tools is a folder of the repository outside the sparse folders');
   assert.ok(has(dir, '.claude/settings.local.json'), '.claude is no folder of the repository: copied');
+});
+
+test('lane sync says a sparse lane was checked on its folders only', () => {
+  const main = makeTree('sp5');
+  const dir = newLane('sp5', 'feat-a', { sparse: ['docs'] }).result;
+  fs.writeFileSync(path.join(dir, 'docs', 'more.md'), 'more\n');
+  git(dir, 'add', '-A');
+  git(dir, 'commit', '-q', '-m', 'docs');
+  git(dir, 'push', '-q', 'origin', 'feat-a');
+  fs.writeFileSync(path.join(main, 'tools', 'y.sh'), 'y\n');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-q', '-m', 'base moves');
+  git(main, 'push', '-q', 'origin', 'main');
+  const { out } = capture(() => lane.cmdSync('sp5', { push: false }));
+  assert.match(out, /rebased, checks pass on its folders only \(lane verify checks the whole\)/);
 });

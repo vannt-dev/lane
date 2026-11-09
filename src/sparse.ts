@@ -59,7 +59,16 @@ export function applySparse(co: Checkout, dirs: readonly string[]): void {
   else if (isSparse(co)) co.git(...FAST, 'sparse-checkout', 'disable');
 }
 
-/** Chosen folders the checkout does not have: not in its commit (a typo, or added later). */
+/**
+ * Chosen folders the checkout has no folder for: not in its commit (a typo, or added later),
+ * or a file (cone mode takes folders only, so a file name adds nothing).
+ */
 export function missingDirs(co: Checkout, dirs: readonly string[]): string[] {
-  return dirs.filter((d) => !fs.existsSync(path.join(co.dir, d)));
+  return dirs.filter((d) => {
+    try {
+      return !fs.statSync(path.join(co.dir, d)).isDirectory();
+    } catch {
+      return true;
+    }
+  });
 }
