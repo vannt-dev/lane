@@ -83,6 +83,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_ROOT` | Required. `<lane root>`: the folder for the slots (and `.locks`) |
 | `LANE_MAX_SLOTS` | Slots per repository (default 4) |
 | `LANE_PORT_STRIDE` | Ports per slot (default 10): slot n owns the usual port + n x stride onwards |
+| `LANE_LINK_DEPS` | `1`: every `lane new` links npm dependencies from a lane on the same lockfile (see Dependencies from another lane) |
 
 ## Commands
 
@@ -190,13 +191,34 @@ lane new bigrepo feat/web --sparse app/web --sparse docs
   usual ones) are not copied into a folder of the repository the lane leaves out.
 - A monorepo's install can fail when a workspace is outside the folders. A sparse lane then
   says so and is ready without dependencies: add the folder (`git sparse-checkout add`) and
-  rerun the install, or take the lane with `--no-sparse`.
+  rerun the install, or take the lane with `--no-sparse`. With `--link-deps` it gets them from a
+  whole lane instead (see Dependencies from another lane).
 - Checks run in a sparse lane (hooks, `lane sync`, the brief's checks) see only its folders;
   `lane verify` is the check on the whole repository.
 - Narrowing a reused slot leaves ignored files (an old `node_modules`) where they were.
 - `lane list` shows a slot's folders. `CLAUDE.local.md` and `lane brief` name them and tell the
   agent to add one with `git sparse-checkout add <folder>`, not to turn sparse off.
 - A folder missing from the commit (a typo) is named when the lane is made.
+
+## Dependencies from another lane
+
+`lane new <repo> <task> --link-deps` (or `LANE_LINK_DEPS=1` for every lane) skips `npm ci` when
+another lane of the repository was installed from the same lockfile: the new lane's
+`node_modules` folders (the root one and those of workspaces) are made of hard links to that
+lane's files.
+
+- Each lane owns its folders. `rm -rf node_modules/` or `npm ci` in one lane changes that lane
+  only; the files on disk are shared until one side replaces them.
+- Never a junction or symlink to one shared `node_modules`: deleting through one (Git Bash
+  `rm -rf node_modules/` with the trailing slash) empties it for every lane.
+- The source lane must have installed from this lockfile and still be on it (no `npm install`
+  since). Workspace links point into the new lane. `.cache` and `.vite` are not linked.
+- npm only. pnpm already links from its own store. A repository with a `patches/` folder is not
+  linked: patch-package rewrites files in place, and a hard link would carry that to the other
+  lanes.
+- A sparse lane gets the folders of the workspaces it has, so it has dependencies even when
+  `npm ci` would fail on the workspaces it left out.
+- Anything that fails (another drive, no link rights) falls back to `npm ci`.
 
 ## Known
 
