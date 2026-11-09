@@ -295,6 +295,46 @@
           width: 34%;
         }
       }
+      /* The replay of a recorded round (#replay). Without JavaScript the whole log shows. */
+      .rp-controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 12px; }
+      .rp-controls button,
+      .rp-gate button {
+        font: 600 14px system-ui, sans-serif;
+        border-radius: 8px;
+        padding: 7px 14px;
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fg);
+      }
+      .rp-controls .primary,
+      .rp-gate button { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+      .rp-grid { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 16px; align-items: start; }
+      @media (max-width: 860px) { .rp-grid { grid-template-columns: minmax(0, 1fr); } }
+      pre.rp-log { max-height: 440px; overflow: auto; font-size: 12.5px; white-space: pre; }
+      .rp-log .ln { display: block; min-height: 1.55em; }
+      .rp-log .cmd { color: #5eead4; }
+      .rp-log .note { color: #94a3b8; font-style: italic; }
+      .rp-log .dim { color: #64748b; }
+      .rp-log .busy::after { content: ' \258D'; animation: rp-blink 1s steps(2, start) infinite; }
+      @keyframes rp-blink { to { visibility: hidden; } }
+      .replay.armed .rp-log .ln:not(.on) { display: none; }
+      .replay.armed pre.rp-log { min-height: 440px; }
+      .rp-hint { display: none; color: var(--muted); font-size: 14px; margin: 0 0 8px; }
+      .replay.armed.idle .rp-hint { display: block; }
+      .rp-side { display: grid; gap: 14px; }
+      .rp-steps { margin: 0; padding-left: 20px; color: var(--muted); }
+      .rp-steps li { margin: 2px 0; }
+      .rp-steps li.past { color: var(--fg); }
+      .rp-steps li.now { color: var(--accent); font-weight: 700; }
+      .rp-meters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+      .rp-meters div { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+      .rp-meters dt { font-size: 12px; color: var(--muted); }
+      .rp-meters dd { margin: 2px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+      .rp-gate { border: 1px solid var(--accent); border-radius: 8px; padding: 10px 12px; font-size: 14px; }
+      .rp-gate p { margin: 0 0 8px; }
+      .rp-note { font-size: 13px; color: var(--muted); margin: 0; }
+      @media (prefers-reduced-motion: reduce) { .rp-log .busy::after { animation: none; } }
     </style>
   </head>
   <body>
@@ -414,6 +454,48 @@
           <code>/junto:status all</code> shows every lane's task in one table (or a board with <code>/junto:status html</code>). junto warns
           when the base moved since a lane was verified, the same lesson <code>lane sync</code> acts on.
         </p>
+      </section>
+
+      <section id="replay" class="replay">
+        <h2 data-i18n="rp.h2">A real round, replayed</h2>
+        <p class="sub" data-i18n="rp.sub">
+          lane 0.10.1 on a copy of dynamic-field-kit (1,145 npm packages): two tasks, the second sparse with its dependencies linked
+          from the first. <span id="rp-total">37</span> seconds of real time; every line is what the commands printed.
+        </p>
+        <div class="rp-controls">
+          <button type="button" class="primary" id="rp-play" data-i18n="rp.play" hidden>Play</button>
+          <button type="button" id="rp-pause" data-i18n="rp.pause" hidden>Pause</button>
+          <button type="button" id="rp-restart" data-i18n="rp.restart" hidden>Restart</button>
+        </div>
+        <p class="rp-hint" data-i18n="rp.hint">Press Play to watch the round.</p>
+        <div class="rp-grid">
+          <div><!-- replay:log --><pre class="rp-log" id="rp-log" tabindex="0"><span class="ln cmd" data-step="0" data-sec="16" data-held="1" data-tests="0" data-ci="16">$ lane new dfk feat/forms</span><span class="ln">fetching dfk...</span><span class="ln">lane dfk-1 (new slot): branch feat/forms from origin/develop, held for feat/forms, lease c9a58e</span><span class="ln">dependencies: no other lane installed from this lockfile yet</span><span class="ln">&gt; npm ci --no-audit --no-fund</span><span class="ln dim">npm warn deprecated @ngtools/webpack@22.2.5: Angular's Webpack support is deprecated. Use the esbuild and Vite-based "@angular/build" package instead.</span><span class="ln dim">npm warn deprecated @angular-devkit/build-angular@22.2.5: Angular's Webpack support is deprecated. Use the esbuild and Vite-based "@angular/build" package instead.</span><span class="ln"></span><span class="ln">&gt; prepare</span><span class="ln">&gt; husky &amp;&amp; git config commit.template .git-commit-template.txt || true</span><span class="ln"></span><span class="ln"></span><span class="ln">added 1145 packages in 14s</span><span class="ln dim">npm warn install-scripts 5 packages have install scripts not yet covered by allowScripts:</span><span class="ln dim">npm warn install-scripts   @parcel/watcher@2.6.0 (install: node scripts/build-from-source.js)</span><span class="ln dim">npm warn install-scripts   esbuild@0.28.2 (postinstall: node install.js)</span><span class="ln dim">npm warn install-scripts   lmdb@3.5.6 (install: node-gyp-build-optional-packages)</span><span class="ln dim">npm warn install-scripts   msgpackr-extract@3.0.4 (install: node-gyp-build-optional-packages)</span><span class="ln dim">npm warn install-scripts   unrs-resolver@1.12.2 (postinstall: node postinstall.js)</span><span class="ln dim">npm warn install-scripts</span><span class="ln dim">npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve &lt;pkg&gt;` to allow.</span><span class="ln">hooks: pre-push wait for a build slot in this lane</span><span class="ln"></span><span class="ln">next: cd F:/demo/wt/dfk-1 &amp;&amp; claude   (agents: lane brief dfk-1; when pushed: lane done --lease c9a58e)</span><span class="ln cmd" data-step="0" data-sec="6" data-held="2" data-tests="0" data-link="6" data-files="45,216">$ lane new dfk feat/core --sparse packages/core --link-deps</span><span class="ln">fetching dfk...</span><span class="ln">lane dfk-2 (new slot): branch feat/core from origin/develop, held for feat/core, lease eb9fc0</span><span class="ln">sparse: packages/core (and the files at the root)</span><span class="ln">dependencies: linked from dfk-1 (45216 files, hard links)</span><span class="ln"></span><span class="ln">next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pushed: lane done --lease eb9fc0)</span><span class="ln note" data-step="1" data-sec="0" data-held="2" data-tests="0"># the two agents work and push</span><span class="ln cmd" data-step="1" data-sec="0" data-held="2" data-tests="0">$ lane list --local</span><span class="ln">lane   state                    branch                             local                  PR / CI</span><span class="ln">dfk-1  held: feat/forms, 1 min  feat/forms                         0 changed, 0 unpushed  -</span><span class="ln">dfk-2  held: feat/core, 0 min   feat/core (sparse: packages/core)  0 changed, 0 unpushed  -</span><span class="ln cmd" data-step="2" data-sec="9" data-held="2" data-tests="395">$ lane verify dfk</span><span class="ln">fetching dfk...</span><span class="ln">verifying in dfk-3</span><span class="ln">lane   branch      on origin/develop</span><span class="ln">dfk-1  feat/forms  merged</span><span class="ln">dfk-2  feat/core   merged</span><span class="ln">dependencies: linked from dfk-1 (45276 files, hard links, 4 node_modules folders)</span><span class="ln">&gt; npx vitest run --root packages/core   (in dfk-3)</span><span class="ln"></span><span class="ln"> RUN  v5.0.5 F:/demo/wt/dfk-3/packages/core</span><span class="ln"></span><span class="ln"></span><span class="ln"> Test Files  26 passed (26)</span><span class="ln">      Tests  395 passed (395)</span><span class="ln">   Start at  22:33:32</span><span class="ln">   Duration  1.67s (transform 52%, import 20%, environment 17%, tests 7%, worker 4%)</span><span class="ln"></span><span class="ln"></span><span class="ln">2 lane(s) together on origin/develop: checks pass</span><span class="ln">gave back dfk-3 (was: verify)</span><span class="ln note gate" data-step="3" data-sec="0" data-held="2" data-tests="395"># you merge the pull request of feat/forms</span><span class="ln cmd" data-step="4" data-sec="4" data-held="2" data-tests="790">$ lane sync dfk --push</span><span class="ln">fetching dfk...</span><span class="ln">&gt; npx vitest run --root packages/core   (in dfk-2)</span><span class="ln"></span><span class="ln"> RUN  v5.0.5 F:/demo/wt/dfk-2/packages/core</span><span class="ln"></span><span class="ln"></span><span class="ln"> Test Files  26 passed (26)</span><span class="ln">      Tests  395 passed (395)</span><span class="ln">   Start at  22:33:37</span><span class="ln">   Duration  1.56s (transform 53%, import 20%, environment 16%, tests 8%, worker 3%)</span><span class="ln"></span><span class="ln">lane   onto origin/develop</span><span class="ln">dfk-1  skipped: work already in origin/develop (lane clean gives it back)</span><span class="ln">dfk-2  rebased, checks pass on its folders only (lane verify checks the whole), pushed</span><span class="ln cmd" data-step="5" data-sec="1" data-held="1" data-tests="790">$ lane clean --yes --force</span><span class="ln">fetching dfk...</span><span class="ln">give back  dfk-1  (no PR, work already in origin/develop)</span><span class="ln">keep       dfk-2  (no PR)</span><span class="ln">gave back dfk-1 (was: feat/forms); local branch feat/forms deleted (its work is on the remote or merged)</span><span class="ln">dfk: main clone pulled to 6d713a5 feat(react): validate on blur</span><span class="ln cmd" data-step="5" data-sec="1" data-held="1" data-tests="790">$ lane list --local</span><span class="ln">lane   state                    branch                             local                  PR / CI</span><span class="ln">dfk-1  free (last: feat/forms)  (detached)                         0 changed              -</span><span class="ln">dfk-2  held: feat/core, 1 min   feat/core (sparse: packages/core)  0 changed, 0 unpushed  -</span><span class="ln">dfk-3  free (last: verify)      (detached)                         0 changed              -</span></pre><!-- /replay:log --></div>
+          <div class="card rp-side">
+            <ol class="rp-steps" id="rp-steps">
+              <li data-i18n="rp.s0">Two slots: one whole, one sparse with linked dependencies</li>
+              <li data-i18n="rp.s1">The agents work and push</li>
+              <li data-i18n="rp.s2">Checked together before any merge</li>
+              <li data-i18n="rp.s3">You merge one pull request</li>
+              <li data-i18n="rp.s4">The other lane rebased and checked again</li>
+              <li data-i18n="rp.s5">The merged slot goes back to the pool</li>
+            </ol>
+            <dl class="rp-meters">
+              <div><dt data-i18n="rp.m.held">Slots held</dt><dd><span id="rp-held">1</span></dd></div>
+              <div><dt data-i18n="rp.m.tests">Tests passed</dt><dd><span id="rp-tests">790</span></dd></div>
+              <div><dt data-i18n="rp.m.ci">First lane: npm ci</dt><dd><span id="rp-ci">16</span> s</dd></div>
+              <div><dt data-i18n="rp.m.link">Second lane: linked</dt><dd><span id="rp-link">6</span> s, <span id="rp-files">45,216</span> files</dd></div>
+            </dl>
+            <div class="rp-gate" id="rp-gate" hidden>
+              <p data-i18n="rp.gate">Your turn: you merge the pull request of feat/forms.</p>
+              <button type="button" id="rp-go" data-i18n="rp.go">Merge</button>
+            </div>
+            <p class="rp-note" data-i18n="rp.note">
+              A recording, not a live system. The origin was a local copy, so "you merge" was a push of feat/forms into develop there.
+              Recorded with <a href="https://github.com/vannt-dev/lane/blob/main/docs/replay/record.sh">replay/record.sh</a>; the raw
+              output is <a href="https://github.com/vannt-dev/lane/blob/main/docs/replay/lane.jsonl">replay/lane.jsonl</a>.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section id="commands">
@@ -573,6 +655,27 @@ export LANE_ROOT="$HOME/wt"</pre>
           'lim.3': 'Mỗi nhánh chỉ checkout được ở một lane một lúc; <code>lane done</code> tách slot khỏi nhánh.',
           'lim.4':
             '<code>lane verify</code> chỉ bắt được các lane làm hỏng nhau trong phạm vi các bước kiểm tra của bạn: test, typecheck, lint.',
+          'rp.h2': 'Một vòng thật, phát lại',
+          'rp.sub':
+            'lane 0.10.1 trên một bản sao của dynamic-field-kit (1.145 gói npm): hai task, task thứ hai chỉ lấy một phần repository và lấy thư viện bằng hard link từ task đầu. <span id="rp-total">37</span> giây chạy thật; mọi dòng đều là output thật của các lệnh.',
+          'rp.play': 'Phát',
+          'rp.pause': 'Tạm dừng',
+          'rp.restart': 'Phát lại từ đầu',
+          'rp.hint': 'Bấm Phát để xem vòng chạy.',
+          'rp.s0': 'Hai slot: một slot đầy đủ, một slot sparse lấy thư viện bằng hard link',
+          'rp.s1': 'Các agent làm việc và push',
+          'rp.s2': 'Kiểm tra chung trước khi merge',
+          'rp.s3': 'Bạn merge một pull request',
+          'rp.s4': 'Lane còn lại được rebase và kiểm tra lại',
+          'rp.s5': 'Slot đã merge quay về pool',
+          'rp.m.held': 'Slot đang giữ',
+          'rp.m.tests': 'Test đạt',
+          'rp.m.ci': 'Lane đầu: npm ci',
+          'rp.m.link': 'Lane thứ hai: hard link',
+          'rp.gate': 'Tới lượt bạn: merge pull request của feat/forms.',
+          'rp.go': 'Merge',
+          'rp.note':
+            'Đây là bản ghi, không phải hệ thống đang chạy. Origin là một bản sao trên máy, nên bước "bạn merge" là một lệnh push feat/forms vào develop ở đó. Ghi bằng <a href="https://github.com/vannt-dev/lane/blob/main/docs/replay/record.sh">replay/record.sh</a>; output gốc ở <a href="https://github.com/vannt-dev/lane/blob/main/docs/replay/lane.jsonl">replay/lane.jsonl</a>.',
         },
       };
       var sel = document.getElementById('lang');
@@ -601,6 +704,131 @@ export LANE_ROOT="$HOME/wt"</pre>
       sel.addEventListener('change', function () {
         apply(sel.value);
       });
+    </script>
+    <script>
+      // Replays the recorded round (#replay). Without JavaScript, or with reduced motion, the whole
+      // log and the final numbers stay as they are in the markup.
+      (function () {
+        var box = document.getElementById('replay');
+        if (!box) return;
+        if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+        var $ = function (id) {
+          return document.getElementById(id);
+        };
+        var log = $('rp-log'), play = $('rp-play'), pause = $('rp-pause'), restart = $('rp-restart');
+        var gate = $('rp-gate'), go = $('rp-go');
+        var steps = Array.prototype.slice.call(document.querySelectorAll('#rp-steps li'));
+        var lines = Array.prototype.slice.call(log.querySelectorAll('.ln')).map(function (el) {
+          var typed = el.classList.contains('cmd') || el.classList.contains('note');
+          return { el: el, text: el.textContent, typed: typed, gate: el.classList.contains('gate'), d: el.dataset };
+        });
+        var METERS = ['held', 'tests', 'ci', 'link', 'files'];
+        // ms per typed character, per real second of a command, per printed line
+        var TICK = 40, CHAR = 26, PER_SEC = 220, LINE = 30;
+        var i, t, typing, playing, waiting, timer;
+
+        function show(l) {
+          l.el.classList.add('on');
+          log.scrollTop = log.scrollHeight;
+        }
+        function meters(d) {
+          METERS.forEach(function (k) {
+            if (d[k] !== undefined) $('rp-' + k).textContent = d[k];
+          });
+        }
+        function mark(n) {
+          steps.forEach(function (s, k) {
+            s.classList.toggle('now', k === n);
+            s.classList.toggle('past', k < n);
+          });
+        }
+        function buttons() {
+          var end = i >= lines.length;
+          play.hidden = playing || end || waiting;
+          pause.hidden = !playing;
+          restart.hidden = !playing && i === 0 && t === 0;
+        }
+        function stop() {
+          playing = false;
+          clearInterval(timer);
+          buttons();
+        }
+        function start() {
+          if (playing || waiting) return;
+          playing = true;
+          box.classList.remove('idle');
+          timer = setInterval(tick, TICK);
+          buttons();
+        }
+        function reset() {
+          stop();
+          i = 0; t = 0; typing = true; waiting = false;
+          gate.hidden = true;
+          lines.forEach(function (l) {
+            l.approved = false;
+            l.el.classList.remove('on', 'busy');
+            l.el.textContent = l.text;
+          });
+          METERS.forEach(function (k) {
+            $('rp-' + k).textContent = k === 'held' || k === 'tests' ? '0' : '-';
+          });
+          mark(-1);
+          box.classList.add('armed', 'idle');
+          log.scrollTop = 0;
+          buttons();
+        }
+        function next() {
+          i += 1; t = 0; typing = true;
+        }
+        function tick() {
+          var l = lines[i];
+          if (!l) {
+            stop();
+            mark(steps.length);
+            return;
+          }
+          t += TICK;
+          if (!l.typed) {
+            if (t >= LINE) { show(l); next(); }
+            return;
+          }
+          if (typing) {
+            if (l.gate && !l.approved) {
+              // the person's step: the replay waits for the visitor, as the round waits for a person
+              waiting = true;
+              mark(Number(l.d.step));
+              gate.hidden = false;
+              stop();
+              return;
+            }
+            mark(Number(l.d.step));
+            var n = Math.min(l.text.length, Math.floor(t / CHAR));
+            l.el.textContent = l.text.slice(0, n);
+            show(l);
+            if (n >= l.text.length) { typing = false; t = 0; l.el.classList.add('busy'); }
+            return;
+          }
+          // the command runs for a time in proportion to how long it really took
+          if (t < Math.max(300, Number(l.d.sec || 0) * PER_SEC)) return;
+          l.el.classList.remove('busy');
+          meters(l.d);
+          next();
+        }
+        go.addEventListener('click', function () {
+          var l = lines[i];
+          if (l) l.approved = true;
+          waiting = false;
+          gate.hidden = true;
+          start();
+        });
+        play.addEventListener('click', start);
+        pause.addEventListener('click', stop);
+        restart.addEventListener('click', function () {
+          reset();
+          start();
+        });
+        reset();
+      })();
     </script>
   </body>
 </html>
