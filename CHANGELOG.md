@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/vannt-dev/lane/compare/v0.7.1...v0.8.0) (2026-11-09)
+
+
+### Features
+
+* **new:** sparse slots for big repositories ([#12](https://github.com/vannt-dev/lane/issues/12)) ([4aa3172](https://github.com/vannt-dev/lane/commit/4aa3172b889564bd083a46ccd30003b8ba204aa4))
+
 ## [0.7.1](https://github.com/vannt-dev/lane/compare/v0.7.0...v0.7.1) (2026-11-08)
 
 
