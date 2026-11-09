@@ -24,22 +24,35 @@ export class LaneSetup {
     this.wrapHeavyHooks();
   }
 
+  /** The submodules; a sparse lane loads only those inside its folders (git would load all). */
   private submodules(): void {
     if (!fs.existsSync(path.join(this.lane.dir, '.gitmodules'))) return;
+    const dirs = currentDirs(this.lane);
+    let only = '';
+    if (dirs.length > 0) {
+      const listed = this.lane.tryGit('config', '-f', '.gitmodules', '--get-regexp', '\\.path$') ?? '';
+      const paths = listed.split(/\r?\n/).filter(Boolean).map((l) => l.replace(/^\S+\s+/, ''));
+      const inside = paths.filter((p) => inCone(`${p}/-`, dirs));
+      if (inside.length === 0) return log('submodules: none inside the sparse folders, none loaded');
+      only = ` -- ${inside.map((p) => `"${p}"`).join(' ')}`;
+    }
     log('updating submodules...');
-    if (!runLive('git submodule update --init --recursive', this.lane.dir))
+    if (!runLive(`git submodule update --init --recursive${only}`, this.lane.dir))
       log('WARNING: submodules did not load (a private one needs access); the build may fail');
   }
 
   /**
    * Untracked files of the main clone the work needs (`.env` and the like), when missing. A
-   * sparse lane gets only those inside its folders.
+   * sparse lane skips those in a folder of the repository it does not check out
+   * (`android/key.properties` without `android`); an untracked folder like `.claude` is copied.
    */
   private copyLocalFiles(): void {
     const clone = this.lane.clone;
     const dirs = currentDirs(this.lane);
+    const leftOut = (file: string) =>
+      !inCone(file, dirs) && this.lane.tryGit('cat-file', '-e', `HEAD:${path.posix.dirname(file.replace(/\\/g, '/'))}`) !== null;
     for (const file of [...COPY_DEFAULT, ...listLines(clone.readFile('.lanecopy') ?? '')]) {
-      if (!inCone(file, dirs)) continue;
+      if (leftOut(file)) continue;
       const from = path.join(clone.dir, file);
       const to = path.join(this.lane.dir, file);
       if (fs.existsSync(to) || !fs.existsSync(from) || !fs.statSync(from).isFile()) continue;
@@ -61,9 +74,16 @@ export class LaneSetup {
     if (cmds.length === 0) return;
     const stamp = this.stamp();
     if (this.lane.meta().installStamp === stamp) return log('dependencies: lockfiles unchanged since this slot installed them');
+    const sparse = currentDirs(this.lane).length > 0;
     for (const c of cmds) {
       log(`> ${c}`);
-      if (!runLive(c, this.lane.dir)) throw new Error(`"${c}" failed in ${this.lane.dir}; the lane is kept, fix and rerun it there`);
+      if (runLive(c, this.lane.dir)) continue;
+      // A workspace outside the folders makes a monorepo's install fail; the lane still works.
+      if (sparse) {
+        return log(`WARNING: "${c}" failed in this sparse lane, often a workspace outside its folders. ` +
+          'The lane is ready without dependencies: git sparse-checkout add <folder> and rerun it, or take the lane with --no-sparse');
+      }
+      throw new Error(`"${c}" failed in ${this.lane.dir}; the lane is kept, fix and rerun it there`);
     }
     this.lane.setMeta({ installStamp: stamp });
   }

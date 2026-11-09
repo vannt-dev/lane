@@ -186,7 +186,14 @@ lane new bigrepo feat/web --sparse app/web --sparse docs
   `--no-sparse` takes everything.
 - A reused slot gets what the new task asks for: other folders, or every file again.
   `lane verify` always works on a whole checkout.
-- Untracked files from `.lanecopy` are copied only when they fall inside the folders.
+- Submodules load only when they sit inside the folders. Untracked files (`.lanecopy` and the
+  usual ones) are not copied into a folder of the repository the lane leaves out.
+- A monorepo's install can fail when a workspace is outside the folders. A sparse lane then
+  says so and is ready without dependencies: add the folder (`git sparse-checkout add`) and
+  rerun the install, or take the lane with `--no-sparse`.
+- Checks run in a sparse lane (hooks, `lane sync`, the brief's checks) see only its folders;
+  `lane verify` is the check on the whole repository.
+- Narrowing a reused slot leaves ignored files (an old `node_modules`) where they were.
 - `lane list` shows a slot's folders. `CLAUDE.local.md` and `lane brief` name them and tell the
   agent to add one with `git sparse-checkout add <folder>`, not to turn sparse off.
 - A folder missing from the commit (a typo) is named when the lane is made.

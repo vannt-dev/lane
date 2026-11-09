@@ -90,9 +90,12 @@ test('a folder that is not in the commit is named; local files outside the folde
   fs.writeFileSync(path.join(main, '.lanecopy'), 'tools/local.env\napp/web/local.env\n');
   fs.writeFileSync(path.join(main, 'tools', 'local.env'), 'T=1\n');
   fs.writeFileSync(path.join(main, 'app', 'web', 'local.env'), 'W=1\n');
-  fs.appendFileSync(path.join(main, '.git', 'info', 'exclude'), '.lanecopy\nlocal.env\n');
+  fs.mkdirSync(path.join(main, '.claude'));
+  fs.writeFileSync(path.join(main, '.claude', 'settings.local.json'), '{}\n');
+  fs.appendFileSync(path.join(main, '.git', 'info', 'exclude'), '.lanecopy\nlocal.env\n.claude/\n');
   const { result: dir, out } = newLane('sp4', 'feat-a', { sparse: ['app/web', 'nope'] });
   assert.match(out, /not in this commit: nope/);
   assert.ok(has(dir, 'app/web/local.env'));
-  assert.ok(!has(dir, 'tools/local.env'), 'tools is outside the sparse folders');
+  assert.ok(!has(dir, 'tools/local.env'), 'tools is a folder of the repository outside the sparse folders');
+  assert.ok(has(dir, '.claude/settings.local.json'), '.claude is no folder of the repository: copied');
 });
