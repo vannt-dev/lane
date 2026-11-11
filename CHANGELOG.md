@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/vannt-dev/lane/compare/v0.10.1...v0.10.2) (2026-11-11)
+
+
+### Bug Fixes
+
+* **link-deps:** keep vitest's cache out of the linked node_modules ([#28](https://github.com/vannt-dev/lane/issues/28)) ([a6b6327](https://github.com/vannt-dev/lane/commit/a6b632718189e9d3f51b9e6dd1e4d90982f04321))
+
 ## [0.10.1](https://github.com/vannt-dev/lane/compare/v0.10.0...v0.10.1) (2026-11-09)
 
 
