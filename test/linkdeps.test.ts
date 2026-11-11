@@ -32,6 +32,8 @@ function fakeInstall(dir: string): void {
   fs.writeFileSync(path.join(nm, 'dep', 'lib', 'index.js'), 'module.exports = 1;\n');
   fs.mkdirSync(path.join(nm, '.cache', 'babel'), { recursive: true });
   fs.writeFileSync(path.join(nm, '.cache', 'babel', 'x.json'), '{}');
+  fs.mkdirSync(path.join(nm, '.vitest'), { recursive: true });
+  fs.writeFileSync(path.join(nm, '.vitest', 'results.json'), '{}');
   fs.mkdirSync(path.join(nm, '@me'), { recursive: true });
   // a workspace link the way npm makes it on this OS: relative on POSIX, a junction elsewhere
   fs.mkdirSync(path.join(dir, 'pkgs', 'a'), { recursive: true });
@@ -54,7 +56,8 @@ test('--link-deps fills node_modules with hard links from a lane installed from 
   assert.doesNotMatch(b.out, /npm ci/);
   const file = (d: string) => path.join(d, 'node_modules', 'dep', 'lib', 'index.js');
   assert.equal(fs.statSync(file(b.result)).ino, fs.statSync(file(a.result)).ino, 'same file on disk');
-  assert.ok(!fs.existsSync(path.join(b.result, 'node_modules', '.cache')), 'caches are not shared');
+  for (const cache of ['.cache', '.vitest'])
+    assert.ok(!fs.existsSync(path.join(b.result, 'node_modules', cache)), `${cache} is not shared`);
   const link = path.join(b.result, 'node_modules', '@me', 'a');
   assert.equal(fs.realpathSync(link), fs.realpathSync(path.join(b.result, 'pkgs', 'a')), 'workspace link points into its own lane');
 
