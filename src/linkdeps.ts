@@ -8,7 +8,7 @@ import { installStamp, LOCKFILES } from './detect.ts';
 import type { Lane } from './lane.ts';
 
 /** Folders in node_modules that tools write while they run: each lane makes its own. */
-const OWN = new Set(['.cache', '.vite', '.vite-temp']);
+const OWN = new Set(['.cache', '.vite', '.vite-temp', '.vitest']);
 
 /** The stamp of a checkout's lockfiles as they are now (what a slot records after installing). */
 export function lockStamp(dir: string): string {

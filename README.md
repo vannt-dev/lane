@@ -227,7 +227,7 @@ lane's files.
 - Never a junction or symlink to one shared `node_modules`: deleting through one (Git Bash
   `rm -rf node_modules/` with the trailing slash) empties it for every lane.
 - The source lane must have installed from this lockfile and still be on it (no `npm install`
-  since). Workspace links point into the new lane. `.cache` and `.vite` are not linked.
+  since). Workspace links point into the new lane. `.cache`, `.vite` and `.vitest` are not linked.
 - npm only. pnpm already links from its own store. A repository with a `patches/` folder is not
   linked: patch-package rewrites files in place, and a hard link would carry that to the other
   lanes.
