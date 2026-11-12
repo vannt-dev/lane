@@ -21,6 +21,15 @@ test('installCommands follows the lockfiles', () => {
   assert.deepEqual(installCommands(['README.md']), []);
 });
 
+test('installCommands knows yarn (classic and 2+), bun and uv', () => {
+  assert.deepEqual(installCommands(['package.json', 'yarn.lock']), ['yarn install --frozen-lockfile']);
+  assert.deepEqual(installCommands(['package.json', 'yarn.lock', '.yarnrc.yml']), ['yarn install --immutable']);
+  assert.deepEqual(installCommands(['package.json', 'bun.lock']), ['bun install --frozen-lockfile']);
+  assert.deepEqual(installCommands(['package.json', 'bun.lockb']), ['bun install --frozen-lockfile']);
+  assert.deepEqual(installCommands(['pyproject.toml', 'uv.lock']), ['uv sync --locked']);
+  assert.deepEqual(installCommands(['package.json', 'bun.lock', 'uv.lock']), ['bun install --frozen-lockfile', 'uv sync --locked']);
+});
+
 test('installStamp changes with the lockfiles, not with their order or line ends', () => {
   const a = installStamp([{ name: 'package-lock.json', text: '{"a":1}\n' }, { name: 'pubspec.lock', text: 'x' }]);
   assert.equal(installStamp([{ name: 'pubspec.lock', text: 'x' }, { name: 'package-lock.json', text: '{"a":1}\r\n' }]), a);
@@ -34,6 +43,8 @@ test('checkCommands: custom first, else what the checkout has', () => {
     ['pnpm run typecheck', 'pnpm run test'],
   );
   assert.deepEqual(checkCommands({ files: ['package.json'], scripts: { lint: 'l' } }), ['npm run lint']);
+  assert.deepEqual(checkCommands({ files: ['package.json', 'yarn.lock'], scripts: { test: 't' } }), ['yarn run test']);
+  assert.deepEqual(checkCommands({ files: ['package.json', 'bun.lock'], scripts: { test: 't' } }), ['bun run test']);
   assert.deepEqual(checkCommands({ files: ['pubspec.yaml', 'Cargo.toml'] }), ['flutter analyze', 'flutter test', 'cargo test']);
   assert.deepEqual(checkCommands({ files: ['README.md'] }), []);
 });
