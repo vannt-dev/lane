@@ -14,18 +14,35 @@ export function repoSlug(url: string): string | null {
 }
 
 /** Lockfiles: when one changes, a checkout needs its dependencies installed again. */
-export const LOCKFILES = ['package-lock.json', 'pnpm-lock.yaml', 'pubspec.lock', 'Cargo.lock', 'go.sum'];
+export const LOCKFILES = [
+  'package-lock.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lock', 'bun.lockb', 'pubspec.lock', 'Cargo.lock', 'go.sum', 'uv.lock',
+];
+
+/** The JavaScript package manager a checkout's lockfile names, if any. */
+export function nodePackageManager(files: readonly string[]): 'pnpm' | 'yarn' | 'bun' | 'npm' | null {
+  const has = (f: string) => files.includes(f);
+  if (has('pnpm-lock.yaml')) return 'pnpm';
+  if (has('yarn.lock')) return 'yarn';
+  if (has('bun.lock') || has('bun.lockb')) return 'bun';
+  if (has('package-lock.json')) return 'npm';
+  return null;
+}
 
 /**
- * The install commands for a checkout, from the files at its root.
- * npm ci keeps install scripts on purpose: `prepare` sets up the commit hooks.
+ * The install commands for a checkout, from the files at its root, each held to its lockfile.
+ * npm ci keeps install scripts on purpose: `prepare` sets up the commit hooks. Yarn 2+ (a
+ * `.yarnrc.yml`) spells "frozen" `--immutable`.
  */
 export function installCommands(files: readonly string[]): string[] {
   const has = (f: string) => files.includes(f);
   const out: string[] = [];
-  if (has('pnpm-lock.yaml')) out.push('pnpm install --frozen-lockfile');
-  else if (has('package-lock.json')) out.push('npm ci --no-audit --no-fund');
+  const pm = nodePackageManager(files);
+  if (pm === 'pnpm') out.push('pnpm install --frozen-lockfile');
+  else if (pm === 'yarn') out.push(has('.yarnrc.yml') ? 'yarn install --immutable' : 'yarn install --frozen-lockfile');
+  else if (pm === 'bun') out.push('bun install --frozen-lockfile');
+  else if (pm === 'npm') out.push('npm ci --no-audit --no-fund');
   if (has('pubspec.yaml')) out.push('flutter pub get');
+  if (has('uv.lock')) out.push('uv sync --locked');
   return out;
 }
 
@@ -54,7 +71,7 @@ export function checkCommands(input: {
   const has = (f: string) => input.files.includes(f);
   const out: string[] = [];
   if (has('package.json')) {
-    const pm = has('pnpm-lock.yaml') ? 'pnpm' : 'npm';
+    const pm = nodePackageManager(input.files) ?? 'npm';
     for (const s of ['typecheck', 'lint', 'test']) if (input.scripts?.[s]) out.push(`${pm} run ${s}`);
   }
   if (has('pubspec.yaml')) out.push('flutter analyze', 'flutter test');

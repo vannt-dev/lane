@@ -4,6 +4,7 @@ import { MainClone } from './checkout.ts';
 import { checksFor } from './checks.ts';
 import { config, poolName } from './config.ts';
 import { findLane } from './find.ts';
+import { beforeGiveBack, hooksFor } from './hooks.ts';
 import { Lane } from './lane.ts';
 import { SlotPool } from './pool.ts';
 import { LaneSetup } from './setup.ts';
@@ -36,6 +37,8 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   const held = pool.heldFor(name);
   if (held) throw new Error(`${name} already holds ${held}: work there, or give it back with lane done ${held}`);
   const dirs = chosenDirs(clone, opts);
+  // read first: a broken .lane.json stops here, before a slot is taken
+  const hooks = hooksFor(clone);
   const group = poolName(opts.pool);
   clone.fetch();
   const target = targetFor(clone, name, opts);
@@ -48,7 +51,7 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
     const missing = missingDirs(lane, dirs);
     if (missing.length > 0) log(`note: no such folder in this commit: ${missing.join(', ')} (--sparse takes folders, not files)`);
   }
-  new LaneSetup(lane).run({ install: opts.install, linkDeps: opts.linkDeps });
+  new LaneSetup(lane).run({ install: opts.install, linkDeps: opts.linkDeps, postCreate: hooks.postCreate });
   if (!opts.open || !openAgent(lane.dir, 'claude'))
     log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
   return lane.dir;
@@ -105,6 +108,7 @@ export function cmdDone(name: string | undefined, opts: { force: boolean; lease?
   const safe = lane.safe(lane.pr());
   if (!safe && !opts.force)
     throw new Error(`${lane.name} has ${lane.ahead()} commit(s) on no remote branch: push them, or --force to keep them on the local branch`);
+  beforeGiveBack(lane);
   log(lane.giveBack(safe));
 }
 
@@ -122,6 +126,7 @@ export function cmdFree(name: string, opts: { yes: boolean; force: boolean }): v
   if (!lane.safe(lane.pr()))
     throw new Error(`${lane.name} holds work that is not on the remote; freeing it would lose that (lane rm --force drops it on purpose)`);
   if (!opts.yes) return log(`${lane.name} (${lane.stateText()}) can be freed. Run again with --yes.`);
+  beforeGiveBack(lane);
   log(lane.giveBack(true));
 }
 

@@ -90,7 +90,7 @@ lane list                         # every lane: held or free, branch, changes, P
 
 | Command | What it does |
 | --- | --- |
-| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (`--no-install` to skip), writes `CLAUDE.local.md`. `--open` starts Claude Code in a new Windows Terminal tab, or a tmux window inside tmux; elsewhere it prints the command. `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
+| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (npm, pnpm, yarn, bun, Flutter, uv; `--no-install` to skip), writes `CLAUDE.local.md`, then runs the repository's `postCreate` commands (see Repository hooks). `--open` starts Claude Code in a new Windows Terminal tab, or a tmux window inside tmux; elsewhere it prints the command. `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
 | `lane new <repo> --pr <n>` | The same, on an existing pull request's branch (tracking it), or on a local `pr-<n>` branch for a PR from a fork. |
 | `lane done [<lane>] [--lease ID] [--force]` | Gives the slot back once its work is safe: nothing uncommitted, and its commits on the remote or merged (see Merged). Detaches, deletes the local branch when safe, unlocks. With `--lease`, only while the slot is still held under that lease: a late give-back from a task that already ended never frees the task that came after. `--force` keeps unpushed commits on the local branch. |
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |
@@ -235,6 +235,33 @@ lane's files.
   `npm ci` would fail on the workspaces it left out.
 - Anything that fails (another drive, no link rights) falls back to `npm ci`.
 
+## Repository hooks: .lane.json
+
+A `.lane.json` at the root of the main clone names commands of the repository's own: copy a
+file lane does not know about, run codegen, start or stop a container.
+
+```json
+{
+  "postCreate": ["node scripts/copy-env.js", "npm run codegen"],
+  "preDone": "docker compose down"
+}
+```
+
+- `postCreate` runs at the end of `lane new`, in the lane, after the local files, the install and
+  `CLAUDE.local.md`. It runs on every `lane new`, in a new or a reused slot: keep the commands
+  safe to run twice. `--no-install` does not skip it.
+- `preDone` runs in the lane before `lane done`, `lane free` or `lane clean` gives it back
+  (after `lane done` checked the work is pushed).
+- Each key takes one command line or a list. They run through the shell (cmd.exe on Windows,
+  sh elsewhere), one after the other, output shown, and see `LANE_DIR`, `LANE_NAME`,
+  `LANE_SLOT` and `LANE_MAIN` (the main clone). Commands that run on every OS: `node`, `npm run`.
+- The first command that fails stops the step and names it. A failed `postCreate` leaves the
+  lane held (fix it and rerun the command there); a failed `preDone` keeps the lane held and
+  nothing is given back. `lane clean` keeps that lane and goes on with the others.
+- lane reads the file from the main clone's folder, committed or not, never from the branch a
+  lane checks out: `lane new --pr <n>` does not run commands from someone else's pull request.
+  A broken file (bad JSON, an unknown key) stops `lane new` before it takes a slot.
+
 ## Known
 
 - Removing a lane falls back to a `\\?\` path delete when git hits Windows' path limit, and
@@ -267,6 +294,7 @@ lines. `npm run diagrams` renders the overview diagram from `docs/diagrams/overv
 | `src/pool.ts` | `SlotPool` and the pure `pickSlot` rule |
 | `src/target.ts` | `Target` and its kinds: a new branch, a PR's branch, a fork's, detached |
 | `src/setup.ts` | `LaneSetup`: submodules, local files, install, notes, hooks |
+| `src/hooks.ts` | The repository's `.lane.json` commands (`postCreate`, `preDone`) |
 | `src/checks.ts` | Which checks, and running them under the build cap |
 | `src/locks.ts`, `src/lock-state.ts` | Locks on shared things |
 | `src/github.ts` | A lane's pull request through `gh` |
