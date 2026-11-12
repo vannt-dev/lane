@@ -29,13 +29,15 @@ export function tryRun(cmd: string, args: readonly string[], cwd?: string, input
 }
 
 /**
- * Runs a fixed command line through the shell with its output shown live (npm, pnpm and
- * flutter are .cmd/.bat files on Windows, so they need a shell). Only for commands built
- * in this package, never for user text. It always runs in a lane folder, so like run() it
- * drops a hook's repository variables (git submodule update would act on the hook's repo).
+ * Runs a command line through the shell with its output shown live (npm, pnpm and flutter
+ * are .cmd/.bat files on Windows, so they need a shell). Only for commands built in this
+ * package or named by the repository's own `.lane.json`, never for other text. It always runs
+ * in a lane folder, so like run() it drops a hook's repository variables (git submodule
+ * update would act on the hook's repo); `extra` adds variables.
  */
-export function runLive(commandLine: string, cwd: string): boolean {
-  return spawnSync(commandLine, { cwd, env: gitEnv(), shell: true, stdio: 'inherit', windowsHide: true }).status === 0;
+export function runLive(commandLine: string, cwd: string, extra: Record<string, string> = {}): boolean {
+  const env = { ...gitEnv(), ...extra };
+  return spawnSync(commandLine, { cwd, env, shell: true, stdio: 'inherit', windowsHide: true }).status === 0;
 }
 
 /**

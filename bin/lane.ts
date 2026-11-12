@@ -23,6 +23,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       installed from the same lockfile, instead of npm ci; each lane owns its folders.
       --pool <name> (e.g. review): a slot of that pool only, so reviews and other work never
       take each other's slots; LANE_POOLS="review=2" sets a pool's own max.
+      A .lane.json in the main clone runs the repository's own commands: "postCreate" at
+      the end of lane new, "preDone" before a lane is given back.
   lane new <repo> --pr <n>   A slot on an existing pull request's branch (to test or finish it)
   lane done [<lane>] [--lease ID] [--force]
                              Give the slot back once its work is pushed or merged; with --lease,

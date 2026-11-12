@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config, COPY_DEFAULT } from './config.ts';
 import { HEAVY_HOOKS, HOOK_NAMES, installCommands } from './detect.ts';
+import { runHook } from './hooks.ts';
 import { Lane } from './lane.ts';
 import { findSource, linkBlocker, linkTree, lockStamp, nodeModulesDirs } from './linkdeps.ts';
 import { runLive } from './proc.ts';
@@ -16,13 +17,17 @@ export class LaneSetup {
     this.lane = lane;
   }
 
-  /** Submodules, untracked local files, dependencies, the lane notes and the hook wrappers. */
-  run(opts: { install: boolean; linkDeps?: boolean }): void {
+  /**
+   * Submodules, untracked local files, dependencies, the lane notes, the hook wrappers, then the
+   * repository's own `postCreate` commands (`.lane.json`).
+   */
+  run(opts: { install: boolean; linkDeps?: boolean; postCreate?: readonly string[] }): void {
     this.submodules();
     this.copyLocalFiles();
     if (opts.install) this.install(opts.linkDeps ?? config.linkDeps);
     this.writeNotes();
     this.wrapHeavyHooks();
+    runHook(this.lane, 'postCreate', opts.postCreate ?? [], 'the lane is kept and held: fix it and rerun the command there');
   }
 
   /** The submodules; a sparse lane loads only those inside its folders (git would load all). */
