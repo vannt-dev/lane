@@ -3,6 +3,7 @@ import { MainClone } from './checkout.ts';
 import { config } from './config.ts';
 import { findLane } from './find.ts';
 import { leftovers, rmLaneFolder } from './fsutil.ts';
+import { beforeGiveBack } from './hooks.ts';
 import type { Pr } from './github.ts';
 import { Lane } from './lane.ts';
 import { currentDirs } from './sparse.ts';
@@ -52,7 +53,7 @@ export function cmdClean(opts: { yes: boolean; force: boolean }): void {
     const { act, why } = l.exists ? verdict(l, l.pr(), opts.force) : { act: 'remove', why: 'folder missing' };
     log(`${act.padEnd(9)}  ${l.name}  (${why})`);
     if (act === 'remove') actions.push(() => log(l.remove()));
-    if (act === 'give back') actions.push(() => log(l.giveBack(true)));
+    if (act === 'give back') actions.push(() => giveBack(l));
   }
   for (const dir of leftovers(lanes.map((l) => l.name))) {
     log(`remove     ${dir}  (folder no repository knows)`);
@@ -62,6 +63,16 @@ export function cmdClean(opts: { yes: boolean; force: boolean }): void {
   if (!opts.yes) return log(`\n${actions.length} item(s) to act on. Run again with --yes.`);
   for (const act of actions) act();
   for (const clone of MainClone.all().filter((c) => lanes.some((l) => l.clone.name === c.name))) clone.pull();
+}
+
+/** Gives a merged lane back after its `preDone` commands; one that fails stays, the rest go on. */
+function giveBack(l: Lane): void {
+  try {
+    beforeGiveBack(l);
+  } catch (e) {
+    return log(`kept       ${l.name}  (${e instanceof Error ? e.message : String(e)})`);
+  }
+  log(l.giveBack(true));
 }
 
 /** Deletes a slot for good, folder and caches included. */
