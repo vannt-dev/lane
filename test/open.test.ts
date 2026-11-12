@@ -5,7 +5,7 @@ import { capture } from './support.ts';
 
 test('openPlan: Windows Terminal on Windows, tmux inside tmux, else nothing to open', () => {
   assert.deepEqual(openPlan('D:/wt/r-1', 'claude', { platform: 'win32' }), {
-    program: 'wt.exe', args: ['-w', '0', 'nt', '-d', 'D:/wt/r-1', 'claude'], name: 'Windows Terminal',
+    program: 'wt.exe', args: ['-w', '0', 'nt', '-d', 'D:/wt/r-1', 'cmd', '/k', 'claude'], name: 'Windows Terminal',
   });
   assert.deepEqual(openPlan('/wt/r-1', 'claude', { platform: 'linux', tmux: '/tmp/tmux-1000/default,1,0' }), {
     program: 'tmux', args: ['new-window', '-c', '/wt/r-1', 'claude'], name: 'tmux',

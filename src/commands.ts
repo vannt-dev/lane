@@ -63,10 +63,13 @@ export interface OpenPlan {
 
 /**
  * Where `--open` starts the agent: a new Windows Terminal tab on Windows, a new tmux window
- * inside tmux; elsewhere null, and lane prints the command to run instead.
+ * inside tmux; elsewhere null, and lane prints the command to run instead. Windows Terminal
+ * starts only .exe files, and npm installs agents as .cmd files: cmd.exe runs it (and stays
+ * in the lane when the agent exits).
  */
 export function openPlan(dir: string, command: string, where: { platform: NodeJS.Platform; tmux?: string }): OpenPlan | null {
-  if (where.platform === 'win32') return { program: 'wt.exe', args: ['-w', '0', 'nt', '-d', dir, command], name: 'Windows Terminal' };
+  if (where.platform === 'win32')
+    return { program: 'wt.exe', args: ['-w', '0', 'nt', '-d', dir, 'cmd', '/k', command], name: 'Windows Terminal' };
   if (where.tmux) return { program: 'tmux', args: ['new-window', '-c', dir, command], name: 'tmux' };
   return null;
 }
