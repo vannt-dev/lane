@@ -90,7 +90,7 @@ lane list                         # every lane: held or free, branch, changes, P
 
 | Command | What it does |
 | --- | --- |
-| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (npm, pnpm, yarn, bun, Flutter, uv; `--no-install` to skip), writes `CLAUDE.local.md`, then runs the repository's `postCreate` commands (see Repository hooks). `--open` starts Claude Code in a new Windows Terminal tab, or a tmux window inside tmux; elsewhere it prints the command. `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
+| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (npm, pnpm, yarn, bun, Flutter, uv; `--no-install` to skip), writes `CLAUDE.local.md`, then runs the repository's `postCreate` commands (see Repository hooks). `--open` starts Claude Code in a new Windows Terminal tab, or a tmux window inside tmux; elsewhere it prints the command. `--agent <name>` starts another agent instead (see Other agents). `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
 | `lane new <repo> --pr <n>` | The same, on an existing pull request's branch (tracking it), or on a local `pr-<n>` branch for a PR from a fork. |
 | `lane done [<lane>] [--lease ID] [--force]` | Gives the slot back once its work is safe: nothing uncommitted, and its commits on the remote or merged (see Merged). Detaches, deletes the local branch when safe, unlocks. With `--lease`, only while the slot is still held under that lease: a late give-back from a task that already ended never frees the task that came after. `--force` keeps unpushed commits on the local branch. |
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |
@@ -261,6 +261,23 @@ file lane does not know about, run codegen, start or stop a container.
 - lane reads the file from the main clone's folder, committed or not, never from the branch a
   lane checks out: `lane new --pr <n>` does not run commands from someone else's pull request.
   A broken file (bad JSON, an unknown key) stops `lane new` before it takes a slot.
+
+## Other agents
+
+`lane new` names Claude Code in the command it prints, and `--open` starts it. `--agent` picks
+another agent CLI for both:
+
+```sh
+lane new myrepo feat/login --open --agent codex
+lane new myrepo feat/login --open --agent "aider --yes"   # any command line, as typed
+```
+
+- Known names: `claude` (the default), `codex`, `gemini`, `opencode`, `copilot`, and `cursor`
+  (runs `cursor-agent`). Anything else is run as the command line given.
+- On Windows the tab runs it through `cmd.exe`, so npm's `.cmd` launchers work and the tab
+  keeps a shell in the lane when the agent exits. In tmux, the window runs it through `sh`.
+- `CLAUDE.local.md` is read by Claude Code only. Give any other agent `lane brief` at the top of
+  its task (or put it in that agent's own instructions file).
 
 ## Known
 
