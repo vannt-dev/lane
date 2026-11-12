@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/vannt-dev/lane/compare/v0.10.2...v0.11.0) (2026-11-12)
+
+
+### Features
+
+* **hooks:** repository setup and teardown commands in .lane.json; yarn, bun and uv installs ([#34](https://github.com/vannt-dev/lane/issues/34)) ([4597d7a](https://github.com/vannt-dev/lane/commit/4597d7ac716e57c137c7bc1abb8ca86140c3ad61))
+* **open:** --agent starts another agent CLI instead of Claude Code ([#35](https://github.com/vannt-dev/lane/issues/35)) ([a6c8e6a](https://github.com/vannt-dev/lane/commit/a6c8e6af3795b73c5b04a92fa23f801a8cf16b13))
+
+
+### Bug Fixes
+
+* **open:** open a terminal only where one exists, report it only once open ([#30](https://github.com/vannt-dev/lane/issues/30)) ([711ce02](https://github.com/vannt-dev/lane/commit/711ce02e19a751ff65a74048e07958968acc3e08))
+
 ## [0.10.2](https://github.com/vannt-dev/lane/compare/v0.10.1...v0.10.2) (2026-11-11)
 
 
