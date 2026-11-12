@@ -11,12 +11,14 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   held with git worktree lock while a task uses them and given back afterwards, folder,
   dependencies and build caches kept for the next task.
 
-  lane new <repo> <task> [--base B] [--branch NAME] [--no-install] [--open]
+  lane new <repo> <task> [--base B] [--branch NAME] [--no-install] [--open [--agent A]]
       Take a slot for a task: the one it had before, else a free one, else a new one. New
       branch (default: the task name) from origin/develop if it exists, else the default
       branch. Submodules, untracked .env-type files, dependencies (only when the lockfiles
       changed), CLAUDE.local.md; --open starts Claude Code in a new Windows Terminal tab,
       or a tmux window inside tmux (elsewhere it prints the command). Prints the hold's lease.
+      --agent <name or command>: start (or print) another agent instead of Claude Code:
+      codex, gemini, opencode, copilot, cursor, or any command line ("aider --yes").
       --sparse <folder> (repeatable): check out only those folders and the root files, for
       a big repository; a .lanesparse file in the main clone sets them for every task,
       --no-sparse takes everything. A reused slot gets what the new task asks for.
@@ -76,6 +78,7 @@ const options = {
     'link-deps': { type: 'boolean' },
     pool: { type: 'string' },
     open: { type: 'boolean', default: false },
+    agent: { type: 'string' },
     local: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
@@ -116,6 +119,7 @@ function main(): number {
     cmdNew(a, b, {
       base: values.base, branch: values.branch, pr, install: !values['no-install'], open: values.open,
       sparse: values.sparse, full: values['no-sparse'], linkDeps: values['link-deps'], pool: values.pool,
+      agent: values.agent,
     });
   } else if (cmd === 'list') cmdList({ local: values.local });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });

@@ -24,12 +24,15 @@ interface NewOptions extends TargetOptions {
   linkDeps?: boolean;
   /** The pool to take a slot from (`--pool review`); none for the default pool. */
   pool?: string;
+  /** The agent to start or name (`--agent codex`): a known name or a command line; else Claude Code. */
+  agent?: string;
 }
 
 /** Takes a slot for a task (see SlotPool.take) and sets it up; returns its folder. */
 export function cmdNew(repo: string, task: string | undefined, opts: NewOptions): string {
   const clone = new MainClone(repo);
   const name = task ?? (opts.pr !== undefined ? `pr-${opts.pr}` : undefined);
+  if (opts.agent !== undefined && !opts.agent.trim()) throw new Error('--agent needs a name (claude, codex, gemini, opencode) or a command');
   if (!name) throw new Error('lane new needs a task name, or --pr <number>');
   const pool = new SlotPool(clone);
   // Before targetFor: the task's own branch exists already, and "branch exists" hides the cause.
@@ -49,9 +52,27 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
     if (missing.length > 0) log(`note: no such folder in this commit: ${missing.join(', ')} (--sparse takes folders, not files)`);
   }
   new LaneSetup(lane).run({ install: opts.install, linkDeps: opts.linkDeps });
-  if (!opts.open || !openAgent(lane.dir, 'claude'))
-    log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
+  const agent = agentCommand(opts.agent);
+  if (!opts.open || !openAgent(lane.dir, agent))
+    log(`\nnext: cd ${lane.dir} && ${agent}   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
   return lane.dir;
+}
+
+/** Agent CLIs `--agent` knows by name, and the command that starts each. */
+export const AGENTS: ReadonlyMap<string, string> = new Map([
+  ['claude', 'claude'],
+  ['codex', 'codex'],
+  ['gemini', 'gemini'],
+  ['opencode', 'opencode'],
+  ['copilot', 'copilot'],
+  ['cursor', 'cursor-agent'],
+]);
+
+/** The command for `--agent`: a known name's command, any other text as given, else Claude Code. */
+export function agentCommand(agent?: string): string {
+  const a = agent?.trim();
+  if (!a) return 'claude';
+  return AGENTS.get(a) ?? a;
 }
 
 /** A program that opens a new terminal tab or window running a command in a folder. */
@@ -59,6 +80,8 @@ export interface OpenPlan {
   program: string;
   args: string[];
   name: string;
+  /** Windows: the arguments go to the program as written, so the command line stays as typed. */
+  verbatim?: boolean;
 }
 
 /**
@@ -68,8 +91,10 @@ export interface OpenPlan {
  * in the lane when the agent exits).
  */
 export function openPlan(dir: string, command: string, where: { platform: NodeJS.Platform; tmux?: string }): OpenPlan | null {
-  if (where.platform === 'win32')
-    return { program: 'wt.exe', args: ['-w', '0', 'nt', '-d', dir, 'cmd', '/k', command], name: 'Windows Terminal' };
+  if (where.platform === 'win32') {
+    const args = ['-w', '0', 'nt', '-d', `"${dir}"`, 'cmd', '/k', command];
+    return { program: 'wt.exe', args, name: 'Windows Terminal', verbatim: true };
+  }
   if (where.tmux) return { program: 'tmux', args: ['new-window', '-c', dir, command], name: 'tmux' };
   return null;
 }
@@ -82,7 +107,8 @@ export function openPlan(dir: string, command: string, where: { platform: NodeJS
 export function openAgent(dir: string, command: string, plan?: OpenPlan | null): boolean {
   if (plan === undefined) plan = openPlan(dir, command, { platform: process.platform, tmux: process.env.TMUX });
   if (!plan) return false;
-  const r = spawnSync(plan.program, plan.args, { stdio: 'ignore', windowsHide: true, timeout: 15_000 });
+  const opts = { stdio: 'ignore', windowsHide: true, timeout: 15_000, windowsVerbatimArguments: plan.verbatim } as const;
+  const r = spawnSync(plan.program, plan.args, opts);
   if (r.error || r.status !== 0) {
     log(`could not open ${plan.name} (${r.error ? r.error.message : `exit ${r.status}`})`);
     return false;

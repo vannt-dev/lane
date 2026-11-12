@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { openAgent, openPlan } from '../src/commands.ts';
-import { capture } from './support.ts';
+import { agentCommand, openAgent, openPlan } from '../src/commands.ts';
+import { capture, lane, makeRepo } from './support.ts';
 
 test('openPlan: Windows Terminal on Windows, tmux inside tmux, else nothing to open', () => {
   assert.deepEqual(openPlan('D:/wt/r-1', 'claude', { platform: 'win32' }), {
-    program: 'wt.exe', args: ['-w', '0', 'nt', '-d', 'D:/wt/r-1', 'cmd', '/k', 'claude'], name: 'Windows Terminal',
+    program: 'wt.exe', args: ['-w', '0', 'nt', '-d', '"D:/wt/r-1"', 'cmd', '/k', 'claude'], name: 'Windows Terminal', verbatim: true,
   });
+  // the command line reaches cmd.exe as typed, quotes and all
+  assert.deepEqual(openPlan('D:/wt/r 1', 'aider --message "hi there"', { platform: 'win32' })?.args.slice(4), [
+    '"D:/wt/r 1"', 'cmd', '/k', 'aider --message "hi there"',
+  ]);
   assert.deepEqual(openPlan('/wt/r-1', 'claude', { platform: 'linux', tmux: '/tmp/tmux-1000/default,1,0' }), {
     program: 'tmux', args: ['new-window', '-c', '/wt/r-1', 'claude'], name: 'tmux',
   });
@@ -26,4 +30,21 @@ test('openAgent reports success only when the terminal started', () => {
   assert.equal(result, false);
   assert.doesNotMatch(out, /opened/);
   assert.match(out, /could not open Some Terminal/);
+});
+
+test('agentCommand: Claude Code by default, known names, any other command as given', () => {
+  assert.equal(agentCommand(undefined), 'claude');
+  assert.equal(agentCommand('codex'), 'codex');
+  assert.equal(agentCommand('gemini'), 'gemini');
+  assert.equal(agentCommand('opencode'), 'opencode');
+  assert.equal(agentCommand('cursor'), 'cursor-agent');
+  assert.equal(agentCommand(' aider --yes '), 'aider --yes');
+  assert.equal(agentCommand('constructor'), 'constructor', 'not a key of Object.prototype');
+});
+
+test('lane new --agent names that agent in the command to run', () => {
+  makeRepo('ag1');
+  const { out } = capture(() => lane.cmdNew('ag1', 'feat-a', { install: false, open: false, agent: 'codex' }));
+  assert.match(out, /next: cd .*ag1-1 && codex {3}\(agents: lane brief ag1-1/);
+  assert.throws(() => lane.cmdNew('ag1', 'feat-b', { install: false, open: false, agent: ' ' }), /--agent needs a name/);
 });
