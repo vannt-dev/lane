@@ -684,7 +684,7 @@ export LANE_ROOT="$HOME/wt"</pre>
         <h3 data-i18n="gs.lim.h">Limits</h3>
         <ul>
           <li data-i18n="lim.1">
-            <code>lane new --open</code> starts Claude Code in a new Windows Terminal tab; elsewhere it prints the command to run.
+            <code>lane new --open</code> starts Claude Code in a new Windows Terminal tab on Windows, in a new tmux window inside tmux; elsewhere it prints the command to run.
           </li>
           <li data-i18n="lim.2">
             Windows does not tell another process's working folder, so a shell sitting in a slot is not seen when lane looks for left-behind
@@ -765,7 +765,7 @@ export LANE_ROOT="$HOME/wt"</pre>
           'gs.env': '<code>LANE_REPOS</code> chứa các bản clone, <code>LANE_ROOT</code> chứa các slot. Cả hai đều bắt buộc.',
           'gs.lim.h': 'Giới hạn',
           'lim.1':
-            '<code>lane new --open</code> mở Claude Code trong một tab Windows Terminal mới; trên hệ khác, lệnh in ra câu lệnh để bạn tự chạy.',
+            '<code>lane new --open</code> mở Claude Code trong một tab Windows Terminal mới trên Windows, trong một cửa sổ tmux mới khi đang ở trong tmux; trường hợp khác, lệnh in ra câu lệnh để bạn tự chạy.',
           'lim.2':
             'Windows không cho biết thư mục làm việc của tiến trình khác, nên khi tìm slot bị bỏ quên, lane không thấy một shell đang đứng trong slot; tiến trình có tên slot trên dòng lệnh thì vẫn thấy.',
           'lim.3': 'Mỗi nhánh chỉ checkout được ở một lane một lúc; <code>lane done</code> tách slot khỏi nhánh.',

@@ -1,5 +1,5 @@
 // Working in one lane: take a slot, give it back, free a left-behind hold, its port and brief.
-import { spawn } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { MainClone } from './checkout.ts';
 import { checksFor } from './checks.ts';
 import { config, poolName } from './config.ts';
@@ -49,17 +49,43 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
     if (missing.length > 0) log(`note: no such folder in this commit: ${missing.join(', ')} (--sparse takes folders, not files)`);
   }
   new LaneSetup(lane).run({ install: opts.install, linkDeps: opts.linkDeps });
-  if (opts.open) openClaude(lane.dir);
-  else log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
+  if (!opts.open || !openAgent(lane.dir, 'claude'))
+    log(`\nnext: cd ${lane.dir} && claude   (agents: lane brief ${lane.name}; when pushed: lane done --lease ${lease})`);
   return lane.dir;
 }
 
-function openClaude(dir: string): void {
-  // a new Windows Terminal tab running Claude Code in the lane
-  const child = spawn('wt.exe', ['-w', '0', 'nt', '-d', dir, 'claude'], { detached: true, stdio: 'ignore' });
-  child.on('error', () => log(`could not open Windows Terminal; run: cd ${dir} && claude`));
-  child.unref();
-  log(`opened Claude Code in ${dir}`);
+/** A program that opens a new terminal tab or window running a command in a folder. */
+export interface OpenPlan {
+  program: string;
+  args: string[];
+  name: string;
+}
+
+/**
+ * Where `--open` starts the agent: a new Windows Terminal tab on Windows, a new tmux window
+ * inside tmux; elsewhere null, and lane prints the command to run instead.
+ */
+export function openPlan(dir: string, command: string, where: { platform: NodeJS.Platform; tmux?: string }): OpenPlan | null {
+  if (where.platform === 'win32') return { program: 'wt.exe', args: ['-w', '0', 'nt', '-d', dir, command], name: 'Windows Terminal' };
+  if (where.tmux) return { program: 'tmux', args: ['new-window', '-c', dir, command], name: 'tmux' };
+  return null;
+}
+
+/**
+ * Starts the agent in a new tab or window; false when it did not (nothing to open it with,
+ * or the terminal failed), so the caller prints the command instead. Both programs hand the
+ * tab over and exit at once.
+ */
+export function openAgent(dir: string, command: string, plan?: OpenPlan | null): boolean {
+  if (plan === undefined) plan = openPlan(dir, command, { platform: process.platform, tmux: process.env.TMUX });
+  if (!plan) return false;
+  const r = spawnSync(plan.program, plan.args, { stdio: 'ignore', windowsHide: true, timeout: 15_000 });
+  if (r.error || r.status !== 0) {
+    log(`could not open ${plan.name} (${r.error ? r.error.message : `exit ${r.status}`})`);
+    return false;
+  }
+  log(`opened ${command} in ${dir} (${plan.name})`);
+  return true;
 }
 
 /**

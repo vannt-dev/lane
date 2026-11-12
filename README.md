@@ -64,8 +64,8 @@ export LANE_ROOT="$HOME/wt"
 ```
 
 lane was built and is used daily on Windows; CI runs it on Windows, Ubuntu and macOS.
-`lane new --open` starts Claude Code in a new Windows Terminal tab; elsewhere it prints the
-command to run.
+`lane new --open` starts Claude Code in a new Windows Terminal tab on Windows, in a new tmux
+window inside tmux; elsewhere (or when that fails) it prints the command to run.
 
 ## Quick start
 
@@ -90,7 +90,7 @@ lane list                         # every lane: held or free, branch, changes, P
 
 | Command | What it does |
 | --- | --- |
-| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (`--no-install` to skip), writes `CLAUDE.local.md`. `--open` starts Claude Code in a new terminal tab. `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
+| `lane new <repo> <task>` | Takes a slot for the task: the slot it had before, else a free one, else a new one (up to `LANE_MAX_SLOTS`). Locks it (`<task> @ <time> #<lease>`; the lease names this hold), puts it on a new branch (the task name, or `--branch`) from `origin/develop` if the repository has one, else the default branch (`--base` to choose). Loads submodules, copies untracked `.env`, `.env.local`, `android/key.properties`, `.claude/settings.local.json` (more in an untracked `.lanecopy`), installs dependencies only when the lockfiles changed since the slot last installed (`--no-install` to skip), writes `CLAUDE.local.md`. `--open` starts Claude Code in a new Windows Terminal tab, or a tmux window inside tmux; elsewhere it prints the command. `--sparse <folder>` (repeatable) checks out only those folders, see Big repositories. |
 | `lane new <repo> --pr <n>` | The same, on an existing pull request's branch (tracking it), or on a local `pr-<n>` branch for a PR from a fork. |
 | `lane done [<lane>] [--lease ID] [--force]` | Gives the slot back once its work is safe: nothing uncommitted, and its commits on the remote or merged (see Merged). Detaches, deletes the local branch when safe, unlocks. With `--lease`, only while the slot is still held under that lease: a late give-back from a task that already ended never frees the task that came after. `--force` keeps unpushed commits on the local branch. |
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |

@@ -15,7 +15,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       Take a slot for a task: the one it had before, else a free one, else a new one. New
       branch (default: the task name) from origin/develop if it exists, else the default
       branch. Submodules, untracked .env-type files, dependencies (only when the lockfiles
-      changed), CLAUDE.local.md; --open starts Claude Code. Prints the hold's lease.
+      changed), CLAUDE.local.md; --open starts Claude Code in a new Windows Terminal tab,
+      or a tmux window inside tmux (elsewhere it prints the command). Prints the hold's lease.
       --sparse <folder> (repeatable): check out only those folders and the root files, for
       a big repository; a .lanesparse file in the main clone sets them for every task,
       --no-sparse takes everything. A reused slot gets what the new task asks for.
