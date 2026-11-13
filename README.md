@@ -44,6 +44,7 @@ keeps its own task, and `/junto:status all` shows every lane's task in one table
 Node 22.18+, git, and `gh` (logged in) for pull request and CI state. lane is written in
 TypeScript and runs as is (Node strips the types, no build step), so it installs from a clone:
 Node does not run `.ts` files inside `node_modules`, and lane is not published to npm.
+Windows notes are in [the install guide](docs/instal.md).
 
 ```sh
 git clone https://github.com/vannt-dev/lane && cd lane
