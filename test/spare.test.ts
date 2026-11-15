@@ -80,3 +80,17 @@ test('a spare root inside the lane root (or around it) is refused: clean would t
     }
   }
 });
+
+test('a spare root that is a link into the lane root is refused too', () => {
+  fs.mkdirSync(path.join(root, 'inner'), { recursive: true });
+  const link = path.join(path.dirname(root), 'wt-link');
+  fs.symlinkSync(path.join(root, 'inner'), link, 'junction');
+  process.env.LANE_ROOT_SPARE = link;
+  try {
+    assert.throws(() => cmdList({ local: true }), /LANE_ROOT_SPARE .* must be a folder of its own/);
+  } finally {
+    delete process.env.LANE_ROOT_SPARE;
+    fs.rmdirSync(link);
+    fs.rmdirSync(path.join(root, 'inner'));
+  }
+});

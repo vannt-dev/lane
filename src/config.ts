@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 
 // Where lane works, from the environment. The two folders have no default: every machine keeps
@@ -6,6 +7,21 @@ function folder(name: string): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set: point it at ${FOLDERS[name]} (see lane --help)`);
   return value;
+}
+
+/** A folder with links resolved, as far as it exists yet (the rest is kept as written). */
+function realFolder(p: string): string {
+  let at = path.resolve(p);
+  const rest: string[] = [];
+  while (!fs.existsSync(at) && path.dirname(at) !== at) {
+    rest.unshift(path.basename(at));
+    at = path.dirname(at);
+  }
+  try {
+    return path.join(fs.realpathSync.native(at), ...rest);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 const FOLDERS: Record<string, string> = {
@@ -35,8 +51,9 @@ export const config = {
     const spare = this.spareRoot;
     if (!spare) return [root];
     const norm = (p: string) => path.resolve(p).toLowerCase().replace(/[\\/]+$/, '') + path.sep;
-    const [a, b] = [norm(root), norm(spare)];
-    if (a.startsWith(b) || b.startsWith(a)) {
+    const nested = (x: string, y: string) => norm(x).startsWith(norm(y)) || norm(y).startsWith(norm(x));
+    // as typed, and as the folders really are: a junction or symlink may put one inside the other
+    if (nested(root, spare) || nested(realFolder(root), realFolder(spare))) {
       throw new Error(`LANE_ROOT_SPARE (${spare}) must be a folder of its own, not LANE_ROOT (${root}) nor inside or around it`);
     }
     return [root, spare];
