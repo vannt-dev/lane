@@ -10,6 +10,33 @@ import { readMeta, writeMeta, type SlotMeta } from './meta.ts';
 import { holdAbandoned, processesUsing } from './stale.ts';
 import { age, parseReason, slotNumber, workSafe, type Worktree } from './worktrees.ts';
 
+/**
+ * A lane's hold. `held`: locked for `task`; `free`: given back with `lane done` (`task` is the
+ * last one); `unlocked`: not locked, yet changed since it was given back; `missing`: no folder.
+ */
+export interface LaneState {
+  state: 'held' | 'free' | 'unlocked' | 'missing';
+  task: string | null;
+  lease: string | null;
+  /** When the hold began (ms since 1970), when the lock reason says. */
+  since: number | null;
+  abandoned: boolean;
+  /** Time since anything changed the slot's index; null when it cannot be read. */
+  idleMs: number | null;
+}
+
+/** A lane's state in words, for a table or a message. */
+export function stateText(s: Pick<LaneState, 'state' | 'task' | 'since' | 'abandoned' | 'idleMs'>): string {
+  const idle = age(s.idleMs ?? Number.POSITIVE_INFINITY);
+  if (s.state === 'held') {
+    const left = s.abandoned ? `, looks abandoned (unchanged ${idle}, no process)` : '';
+    return `held: ${s.task}${s.since ? `, ${age(Date.now() - s.since)}` : ''}${left}`;
+  }
+  if (s.state === 'missing') return 'folder missing';
+  if (s.state === 'free') return `free (last: ${s.task ?? '?'})`;
+  return `not locked, changed ${idle} ago`;
+}
+
 export class Lane extends Checkout {
   readonly clone: MainClone;
   readonly wt: Worktree;
@@ -110,16 +137,21 @@ export class Lane extends Checkout {
     return [...claims.map((c) => c.name), ...processesUsing(this.dir).map((pid) => `pid ${pid}`)];
   }
 
-  /** Held for a task (and how long), or free. */
-  stateText(): string {
+  /** Held for a task (and since when), free, or not locked: what `lane list` shows and prints as JSON. */
+  state(): LaneState {
+    const idle = this.idleMs();
+    const idleMs = Number.isFinite(idle) ? Math.round(idle) : null;
     if (this.locked !== null) {
       const r = parseReason(this.locked);
-      const left = this.abandoned() ? `, looks abandoned (unchanged ${age(this.idleMs())}, no process)` : '';
-      return `held: ${r.task}${r.since ? `, ${age(Date.now() - r.since)}` : ''}${left}`;
+      return { state: 'held', task: r.task, lease: r.lease, since: r.since, abandoned: this.abandoned(), idleMs };
     }
-    if (!this.exists) return 'folder missing';
-    if (this.released()) return `free (last: ${this.meta().task ?? '?'})`;
-    return `not locked, changed ${age(this.idleMs())} ago`;
+    const rest = { lease: null, since: null, abandoned: false, idleMs };
+    if (!this.exists) return { state: 'missing', task: null, ...rest };
+    return { state: this.released() ? 'free' : 'unlocked', task: this.meta().task ?? null, ...rest };
+  }
+
+  stateText(): string {
+    return stateText(this.state());
   }
 
   /** Detached (the branch is free elsewhere, deleted when safe), unlocked, folder and caches kept. */

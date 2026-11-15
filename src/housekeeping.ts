@@ -5,23 +5,82 @@ import { findLane } from './find.ts';
 import { leftovers, rmLaneFolder } from './fsutil.ts';
 import { beforeGiveBack } from './hooks.ts';
 import type { Pr } from './github.ts';
-import { Lane } from './lane.ts';
+import { Lane, stateText, type LaneState } from './lane.ts';
 import { currentDirs } from './sparse.ts';
 import { log, printTable } from './text.ts';
 
-export function cmdList(opts: { local: boolean }): void {
-  const lanes = Lane.all();
-  if (lanes.length === 0) return log(`no lanes under ${config.root}`);
-  printTable(['lane', 'state', 'branch', 'local', 'PR / CI'], lanes.map((l) => {
-    const pr = opts.local || !l.branch ? undefined : l.pr();
-    const prText = pr === undefined ? '-' : pr ? `#${pr.number} ${pr.state.toLowerCase()} ${pr.checks}` : 'no PR';
+/** One lane as `lane list` knows it; `lane list --json` prints these, the table is made from them. */
+export interface LaneInfo {
+  name: string;
+  repo: string;
+  /** The slot number; null for a lane folder named otherwise. */
+  slot: number | null;
+  path: string;
+  /** The named pool the slot belongs to; null for the default pool. */
+  pool: string | null;
+  state: LaneState['state'];
+  /** The task the lane is held for, or the last one it held. */
+  task: string | null;
+  lease: string | null;
+  /** When the hold began (ISO 8601, UTC) and how long ago; null when not held. */
+  heldSince: string | null;
+  heldMs: number | null;
+  abandoned: boolean;
+  /** Time since anything changed in the slot. */
+  idleMs: number | null;
+  /** null when detached (a free slot, a verify slot). */
+  branch: string | null;
+  /** The folders of a sparse lane; empty when it has every file. */
+  sparse: string[];
+  /** Uncommitted and untracked files; null when the folder is missing. */
+  changed: number | null;
+  /** Commits on no remote branch; null when detached or the folder is missing. */
+  unpushed: number | null;
+  /** The branch's newest pull request, null when it has none; left out when not asked (--local, detached). */
+  pr?: { number: number; state: string; checks: string } | null;
+}
+
+export function laneInfo(l: Lane, opts: { local: boolean }): LaneInfo {
+  const s = l.state();
+  const info: LaneInfo = {
+    name: l.name,
+    repo: l.clone.name,
+    slot: l.slot,
+    path: l.dir,
+    pool: (l.exists ? l.meta().pool : undefined) ?? null,
+    state: s.state,
+    task: s.task,
+    lease: s.lease,
+    heldSince: s.since === null ? null : new Date(s.since).toISOString(),
+    heldMs: s.since === null ? null : Math.max(0, Date.now() - s.since),
+    abandoned: s.abandoned,
+    idleMs: s.idleMs,
+    branch: l.branch || null,
+    sparse: l.exists ? currentDirs(l) : [],
+    changed: l.exists ? l.dirty() : null,
     // A detached slot has no branch to push: its commits (verify's merges) go when it is taken again.
-    const local = !l.exists ? '-' : l.branch ? `${l.dirty()} changed, ${l.ahead()} unpushed` : `${l.dirty()} changed`;
-    const dirs = l.exists ? currentDirs(l) : [];
-    const branch = `${l.branch || '(detached)'}${dirs.length ? ` (sparse: ${dirs.join(', ')})` : ''}`;
-    const pool = l.exists ? l.meta().pool : undefined;
-    return [`${l.name}${pool ? ` (${pool})` : ''}`, l.stateText(), branch, local, prText];
-  }));
+    unpushed: l.exists && l.branch ? l.ahead() : null,
+  };
+  if (!opts.local && l.branch) {
+    const pr = l.pr();
+    info.pr = pr ? { number: pr.number, state: pr.state, checks: pr.checks } : null;
+  }
+  return info;
+}
+
+function tableRow(i: LaneInfo): string[] {
+  const prText = i.pr === undefined ? '-' : i.pr ? `#${i.pr.number} ${i.pr.state.toLowerCase()} ${i.pr.checks}` : 'no PR';
+  const local = i.changed === null ? '-' : `${i.changed} changed${i.unpushed === null ? '' : `, ${i.unpushed} unpushed`}`;
+  const branch = `${i.branch ?? '(detached)'}${i.sparse.length ? ` (sparse: ${i.sparse.join(', ')})` : ''}`;
+  return [`${i.name}${i.pool ? ` (${i.pool})` : ''}`, stateText({ ...i, since: i.heldSince === null ? null : Date.parse(i.heldSince) }), branch, local, prText];
+}
+
+/** Every lane, as a table; `json`: as one JSON array on stdout and nothing else, for scripts and agents. */
+export function cmdList(opts: { local: boolean; json?: boolean }): void {
+  const lanes = Lane.all().map((l) => laneInfo(l, opts));
+  if (opts.json) return log(JSON.stringify(lanes, null, 2));
+  if (lanes.length === 0) return log(`no lanes under ${config.root}`);
+  printTable(['lane', 'state', 'branch', 'local', 'PR / CI'], lanes.map(tableRow));
 }
 
 /**
