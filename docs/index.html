@@ -532,7 +532,7 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
             <h3 data-i18n="h.4.h">Checked together</h3>
             <p data-i18n="h.4">
               <code>lane verify</code> merges every open lane on top of the base and runs the checks before the first one merges.
-              <code>lane sync</code> rebases the rest after a merge and checks them again.
+              When they fail, it names the lane or the pair of lanes to blame. <code>lane sync</code> rebases the rest after a merge and checks them again.
             </p>
           </div>
           <div class="card">
@@ -734,7 +734,7 @@ export LANE_ROOT="$HOME/wt"</pre>
             '<code>lane claim emulator</code> chờ tới lượt dùng máy ảo Android, <code>lane with build -- &lt;cmd&gt;</code> cho tối đa hai bản build nặng chạy cùng lúc, và <code>lane port 3000</code> cho mỗi slot một dải cổng riêng.',
           'h.4.h': 'Kiểm tra cùng nhau',
           'h.4':
-            '<code>lane verify</code> merge mọi lane đang mở lên base rồi chạy kiểm tra, trước khi lane đầu tiên được merge. <code>lane sync</code> rebase các lane còn lại sau mỗi lần merge rồi kiểm tra lại.',
+            '<code>lane verify</code> merge mọi lane đang mở lên base rồi chạy kiểm tra, trước khi lane đầu tiên được merge. Khi kiểm tra hỏng, nó chỉ ra lane hoặc cặp lane gây lỗi. <code>lane sync</code> rebase các lane còn lại sau mỗi lần merge rồi kiểm tra lại.',
           'h.5.h': 'Nhận ra đã merge mà không cần GitHub',
           'h.5':
             '<code>lane clean</code> trả lại các lane đã merge, kể cả squash merge, không cần hỏi GitHub. Lane còn được giữ cho các vòng sửa tiếp theo thì được để lại.',

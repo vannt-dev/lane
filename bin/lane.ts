@@ -2,7 +2,7 @@
 import { parseArgs } from 'node:util';
 import {
   cmdBrief, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdNew, cmdPort, cmdRelease, cmdRemove,
-  cmdSync, cmdVerify, cmdWith, config,
+  BISECT_MAX, cmdSync, cmdVerify, cmdWith, config,
 } from '../src/index.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
@@ -45,9 +45,12 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work)
   lane port <usual port> [k] Port k of this slot's range: usual + slot x ${config.portStride} + k
 
-  lane verify <repo> [--cmd C]... [--keep]
+  lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]
       Merge all open lanes of a repo together in a slot and run the checks: finds lanes that
-      merge cleanly but break each other, before the first one merges.
+      merge cleanly but break each other, before the first one merges. A conflict names the
+      lanes and files. When the checks fail it looks for the lanes to blame: each lane alone
+      on the base, then each pair, in at most N more check runs (default ${BISECT_MAX});
+      --no-bisect skips that search.
   lane sync <repo> [--push] [--cmd C]...
       After a lane merged: rebase the other lanes onto the new base and run their checks again.
       Skips lanes with local changes, a claim or a process in them, or no history in common.
@@ -90,6 +93,8 @@ const options = {
     yes: { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
     keep: { type: 'boolean', default: false },
+    'no-bisect': { type: 'boolean', default: false },
+    'bisect-max': { type: 'string' },
     push: { type: 'boolean', default: false },
     cmd: { type: 'string', multiple: true },
     'no-wait': { type: 'boolean', default: false },
@@ -131,7 +136,10 @@ function main(): number {
   } else if (cmd === 'list') cmdList({ local: values.local, json: values.json });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
-  else if (cmd === 'verify' && one) return cmdVerify(a, { cmds: values.cmd, keep: values.keep });
+  else if (cmd === 'verify' && one) {
+    const bisectMax = values['bisect-max'] === undefined ? undefined : whole(values['bisect-max'], '--bisect-max', 0, 1000);
+    return cmdVerify(a, { cmds: values.cmd, keep: values.keep, bisect: !values['no-bisect'], bisectMax });
+  }
   else if (cmd === 'sync' && one) return cmdSync(a, { cmds: values.cmd, push: values.push });
   else if (cmd === 'brief' && b === undefined) cmdBrief(a);
   else if (cmd === 'done' && b === undefined) cmdDone(a, { force: values.force, lease: values.lease });

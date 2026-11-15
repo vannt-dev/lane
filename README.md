@@ -100,7 +100,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane clean [--yes] [--force]` | Gives back the lanes whose work merged (see Merged), removes lanes whose folder is gone and leftover folders, then fast-forwards the main clones. A merged lane still held stays, since follow-up rounds (review fixes, bugs) reuse it, unless its hold looks abandoned or `--force`; one with a claim or a process in it always stays. |
 | `lane rm <lane> [--force]` | Deletes a slot for good. Refuses a held slot or unpushed work without `--force`. |
 | `lane port <usual port> [k]` | Port k (0 to stride - 1) of this slot's range: the usual port + slot x `LANE_PORT_STRIDE` + k. |
-| `lane verify <repo> [--cmd C]... [--keep]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. Kept and held when it fails, to look at. |
+| `lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. A lane that does not merge is listed with the lane it conflicts with and the files. When the checks fail it looks for the lanes to blame, see Which lanes break each other (`--no-bisect` skips that). Kept and held when it fails, to look at. |
 | `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
 | `lane brief [<lane>]` | The rules for an agent working in a lane, to paste at the top of its task: an agent started by another session does not read `CLAUDE.local.md`. |
 | `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. |
@@ -121,6 +121,40 @@ lane verify myrepo          # before merging: do the two still pass together?
 lane sync myrepo --push     # feat/b onto the new base, checked again, pushed
 lane clean --yes --force    # merged slots given back (not one still in use), the main clone pulled
 ```
+
+## Which lanes break each other
+
+When the combined checks of `lane verify` fail, it goes on, in the same slot, to find the
+smallest set of lanes to blame:
+
+1. Each lane alone on the base. A lane that fails there **fails by itself**; the search ends
+   (when every lane fails alone it checks the base with no lane, which may be what is broken).
+2. When every lane passes alone, each **pair** of lanes. Every pair that fails is named.
+3. When no pair fails, the checks fail **only with all lanes together** (three lanes), or with
+   three or more of them (not searched further).
+
+```text
+lanes                checks
+myrepo-1 (feat/a)    pass alone
+myrepo-2 (feat/b)    pass alone
+myrepo-3 (feat/c)    pass alone
+myrepo-1 + myrepo-2  FAIL together: "npm test"
+myrepo-1 + myrepo-3  pass together
+myrepo-2 + myrepo-3  pass together
+
+3 lane(s) together on origin/main: "npm test" FAILS.
+myrepo-1 (feat/a) and myrepo-2 (feat/b) break each other: each passes alone, together they fail.
+```
+
+A run that passes costs nothing more: the search starts only on a failure. It takes N check
+runs for N lanes alone and N x (N - 1) / 2 for the pairs (two lanes: 2, three: 6, four: 10),
+and stops after `--bisect-max` extra runs (default 10), saying how many combinations it left
+untested. `--no-bisect` (or `--bisect-max 0`) only reports that the combination fails. When
+the search ends the slot holds the combined checkout again.
+
+A lane that does not merge is tried against the base and against each other lane, two at a
+time (merges only, no check runs): `CONFLICT with myrepo-1 (feat/a): src/app.ts`, or
+`CONFLICT with origin/main itself` for a lane the base moved away from.
 
 ## The pool's rules
 
