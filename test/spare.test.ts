@@ -90,7 +90,9 @@ test('a spare root that is a link into the lane root is refused too', () => {
     assert.throws(() => cmdList({ local: true }), /LANE_ROOT_SPARE .* must be a folder of its own/);
   } finally {
     delete process.env.LANE_ROOT_SPARE;
-    fs.rmdirSync(link);
+    // a junction goes with rmdir on Windows, a symlink with unlink elsewhere
+    if (process.platform === 'win32') fs.rmdirSync(link);
+    else fs.unlinkSync(link);
     fs.rmdirSync(path.join(root, 'inner'));
   }
 });
