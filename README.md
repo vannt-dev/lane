@@ -85,6 +85,8 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_PORT_STRIDE` | Ports per slot (default 10): slot n owns the usual port + n x stride onwards |
 | `LANE_LINK_DEPS` | `1`: every `lane new` links npm dependencies from a lane on the same lockfile (see Dependencies from another lane) |
 | `LANE_POOLS` | Max slots of named pools, e.g. `review=2,ci=1` (see Pools) |
+| `LANE_ROOT_SPARE` | A second folder for new slots, on another drive, used when the lane root's drive is short of space (see A spare root) |
+| `LANE_MIN_FREE_GB` | Free space a drive must have for a new slot, in GB. Not set: 10 with `LANE_ROOT_SPARE`, else no check |
 
 ## Commands
 
@@ -200,6 +202,26 @@ lane new bigrepo feat/web --sparse app/web --sparse docs
 - `lane list` shows a slot's folders. `CLAUDE.local.md` and `lane brief` name them and tell the
   agent to add one with `git sparse-checkout add <folder>`, not to turn sparse off.
 - A folder missing from the commit (a typo) is named when the lane is made.
+
+## A spare root: when the drive fills up
+
+```sh
+setx LANE_ROOT_SPARE E:/wt      # Windows; elsewhere: export LANE_ROOT_SPARE=/mnt/big/wt
+setx LANE_MIN_FREE_GB 15        # optional, 10 with a spare root
+```
+
+- Only a **new** slot is placed: when the lane root's drive has less than `LANE_MIN_FREE_GB`
+  free, it is made in `LANE_ROOT_SPARE`, and lane says so. A free slot is reused where it
+  is, on either root, before any new one is made.
+- No root with room: `lane new` refuses and prints the free space of each, before anything
+  is made. `LANE_MIN_FREE_GB` alone gives that check on the lane root, with no spare.
+- Slots of both roots are one pool: one series of numbers (so ports never clash), the same
+  holds, `lane list`, `lane clean` and `lane rm`. `.locks` stays in the lane root.
+- The spare root is lane's own folder, like the lane root: `lane clean` offers to remove any
+  folder in it that is no lane. It may not be the lane root, inside it or around it.
+- Keep the variable set while slots live there: without it lane no longer sees them.
+- `--link-deps` links from a lane on the same drive (a hard link cannot cross drives); with
+  none there, it installs.
 
 ## Pools: reviews apart from other work
 

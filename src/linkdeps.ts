@@ -45,12 +45,15 @@ export function linkBlocker(dir: string): string | null {
 
 /**
  * A lane to copy from: installed from this very lockfile (its recorded stamp), still on it (no
- * `npm install` changed it since), with a node_modules.
+ * `npm install` changed it since), with a node_modules, on the target's drive: a hard link cannot
+ * cross drives (lanes on the spare root).
  */
 export function findSource(target: Lane, siblings: readonly Lane[], stamp: string): Lane | undefined {
+  const dev = (dir: string) => fs.statSync(dir, { throwIfNoEntry: false })?.dev;
+  const here = dev(target.dir);
   return siblings.find((l) =>
-    l.dir !== target.dir && l.exists && l.meta().installStamp === stamp && lockStamp(l.dir) === stamp &&
-    fs.existsSync(path.join(l.dir, 'node_modules')));
+    l.dir !== target.dir && l.exists && dev(l.dir) === here && l.meta().installStamp === stamp &&
+    lockStamp(l.dir) === stamp && fs.existsSync(path.join(l.dir, 'node_modules')));
 }
 
 /**
