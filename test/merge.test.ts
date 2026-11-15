@@ -34,7 +34,7 @@ test('verify reports a text conflict and still checks the rest', () => {
   laneWith('ten', 'feat-d', 'base.txt', 'one\nD\n');
   const { result, out } = capture(() => cmdVerify('ten', { keep: false }));
   assert.equal(result, 1, out);
-  assert.match(out, /CONFLICT with feat-c: base\.txt/);
+  assert.match(out, /CONFLICT with ten-1 \(feat-c\): base\.txt/);
 });
 
 test('sync rebases a lane onto the moved base and runs its checks', () => {
