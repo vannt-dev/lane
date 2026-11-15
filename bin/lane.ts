@@ -34,7 +34,9 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
                              only while the slot is still held under that lease
   lane free <lane> [--yes] [--force]
                              Free a hold that looks abandoned (hours unchanged, no process in it)
-  lane list [--local]        Every lane: held/free (or abandoned), branch, local changes, PR and CI
+  lane list [--local] [--json]
+                             Every lane: held/free (or abandoned), branch, local changes, PR and CI;
+                             --json: one JSON array on stdout, for scripts and agents
   lane clean [--yes] [--force]
                              Give back the slots whose work merged (GitHub, or found offline),
                              then pull the main clones. A slot still held stays (follow-up
@@ -87,6 +89,7 @@ const options = {
     open: { type: 'boolean', default: false },
     agent: { type: 'string' },
     local: { type: 'boolean', default: false },
+    json: { type: 'boolean', default: false },
     yes: { type: 'boolean', default: false },
     force: { type: 'boolean', default: false },
     keep: { type: 'boolean', default: false },
@@ -130,7 +133,7 @@ function main(): number {
       sparse: values.sparse, full: values['no-sparse'], linkDeps: values['link-deps'], pool: values.pool,
       agent: values.agent,
     });
-  } else if (cmd === 'list') cmdList({ local: values.local });
+  } else if (cmd === 'list') cmdList({ local: values.local, json: values.json });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
   else if (cmd === 'verify' && one) {

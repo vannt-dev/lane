@@ -96,7 +96,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane new <repo> --pr <n>` | The same, on an existing pull request's branch (tracking it), or on a local `pr-<n>` branch for a PR from a fork. |
 | `lane done [<lane>] [--lease ID] [--force]` | Gives the slot back once its work is safe: nothing uncommitted, and its commits on the remote or merged (see Merged). Detaches, deletes the local branch when safe, unlocks. With `--lease`, only while the slot is still held under that lease: a late give-back from a task that already ended never frees the task that came after. `--force` keeps unpushed commits on the local branch. |
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |
-| `lane list [--local]` | Every lane: held (task, for how long, and whether it looks abandoned) or free, branch, local changes, PR and CI (`--local`: no GitHub calls). |
+| `lane list [--local] [--json]` | Every lane: held (task, for how long, and whether it looks abandoned) or free, branch, local changes, PR and CI (`--local`: no GitHub calls). `--json` prints the same as one JSON array, see For scripts. |
 | `lane clean [--yes] [--force]` | Gives back the lanes whose work merged (see Merged), removes lanes whose folder is gone and leftover folders, then fast-forwards the main clones. A merged lane still held stays, since follow-up rounds (review fixes, bugs) reuse it, unless its hold looks abandoned or `--force`; one with a claim or a process in it always stays. |
 | `lane rm <lane> [--force]` | Deletes a slot for good. Refuses a held slot or unpushed work without `--force`. |
 | `lane port <usual port> [k]` | Port k (0 to stride - 1) of this slot's range: the usual port + slot x `LANE_PORT_STRIDE` + k. |
@@ -190,6 +190,34 @@ on its command line (a dev server, a test run). Windows does not tell another pr
 working folder, so there a shell sitting in the slot is not seen. `lane list` marks such
 holds and `lane free` releases them. Claims on shared things end on their own when the lane
 hold they were made under ends (the slot given back or taken for another task).
+
+## For scripts: lane list --json
+
+`lane list --json` prints one JSON array on stdout and nothing else: one object per lane, slots
+on the spare root included; `[]` when there are none. The field names are stable.
+
+```sh
+lane list --json --local | jq -r '.[] | select(.state == "free") | .path'   # free slots
+```
+
+| Field | Value |
+| --- | --- |
+| `name` | The lane's folder name, `myrepo-2`. |
+| `repo` | The repository (a folder in `LANE_REPOS`). |
+| `slot` | The slot number; `null` for a lane folder named otherwise. |
+| `path` | The lane's folder. |
+| `pool` | The named pool of the slot; `null` for the default pool. |
+| `state` | `held` (locked for a task), `free` (given back with `lane done`), `unlocked` (not locked, but changed since it was given back: a session may work there), `missing` (the folder is gone). |
+| `task` | The task the lane is held for; for a lane not held, the last one, or `null`. |
+| `lease` | The lease of the hold; `null` when not held. |
+| `heldSince`, `heldMs` | When the hold began (ISO 8601, UTC, to the minute) and how many milliseconds ago; `null` when not held. |
+| `abandoned` | `true` when the hold looks left behind (see Left-behind holds). |
+| `idleMs` | Milliseconds since anything changed in the slot's index; `null` when unknown. |
+| `branch` | The branch; `null` when detached (a free slot, a verify slot). |
+| `sparse` | The folders of a sparse lane; `[]` when it has every file. |
+| `changed` | Uncommitted and untracked files; `null` when the folder is gone. |
+| `unpushed` | Commits on no remote branch; `null` when detached. |
+| `pr` | The branch's newest pull request: `{ "number": 12, "state": "OPEN", "checks": "pass" }` (`state`: `OPEN`, `MERGED`, `CLOSED`; `checks`: `none`, `pass`, `pending`, `fail`), or `null` when it has none. Left out with `--local` and for a detached lane. |
 
 ## How the lanes share
 

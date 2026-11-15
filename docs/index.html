@@ -629,7 +629,7 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
           </tr>
           <tr>
             <th><code>lane list</code></th>
-            <td data-i18n="cmd.list">Every lane: held or free, branch, local changes, pull request and CI.</td>
+            <td data-i18n="cmd.list">Every lane: held or free, branch, local changes, pull request and CI. <code>--json</code> prints it for scripts and agents.</td>
           </tr>
           <tr>
             <th><code>lane verify &lt;repo&gt;</code> · <code>lane sync &lt;repo&gt;</code></th>
@@ -750,7 +750,7 @@ export LANE_ROOT="$HOME/wt"</pre>
           'cmd.new':
             'Lấy một slot cho task: nhánh mới, submodule, file env, cài thư viện khi lockfile đổi, ghi chú cho agent. <code>--pr &lt;n&gt;</code> làm trên nhánh của một pull request; <code>--sparse &lt;thư mục&gt;</code> chỉ lấy các thư mục đó; <code>--pool review</code> để việc review dùng slot riêng.',
           'cmd.done': 'Trả slot khi việc đã được push hoặc merge.',
-          'cmd.list': 'Mọi lane: đang giữ hay trống, nhánh, thay đổi chưa commit, pull request và CI.',
+          'cmd.list': 'Mọi lane: đang giữ hay trống, nhánh, thay đổi chưa commit, pull request và CI. <code>--json</code> in ra dạng JSON cho script và agent.',
           'cmd.verify': 'Merge mọi lane đang mở với nhau rồi kiểm tra; sau một lần merge, rebase các lane còn lại và kiểm tra lại.',
           'cmd.clean': 'Trả các lane đã merge, giải phóng slot bị bỏ quên khi một phiên đóng, xóa hẳn một slot.',
           'cmd.claim': 'Máy ảo cho từng lane một, giới hạn số build nặng, một dải cổng cho mỗi slot.',
