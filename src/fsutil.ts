@@ -68,7 +68,7 @@ export function rootForNewSlot(roots: readonly string[], minFreeGb: number): str
   }
   const spare = roots.length > 1 ? '' : ', or name a folder on another drive in LANE_ROOT_SPARE';
   throw new Error(`no room for a new slot: ${seen.join(', ')}, under ${minFreeGb} GB (LANE_MIN_FREE_GB). ` +
-    `Free some space (lane clean, lane remove)${spare}`);
+    `Free some space (lane clean, lane rm)${spare}`);
 }
 
 /** Deletes a folder; on Windows through the \\?\ form so long paths (node_modules, Gradle) work. */

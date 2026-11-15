@@ -216,7 +216,7 @@ setx LANE_MIN_FREE_GB 15        # optional, 10 with a spare root
 - No root with room: `lane new` refuses and prints the free space of each, before anything
   is made. `LANE_MIN_FREE_GB` alone gives that check on the lane root, with no spare.
 - Slots of both roots are one pool: one series of numbers (so ports never clash), the same
-  holds, `lane list`, `lane clean` and `lane remove`. `.locks` stays in the lane root.
+  holds, `lane list`, `lane clean` and `lane rm`. `.locks` stays in the lane root.
 - The spare root is lane's own folder, like the lane root: `lane clean` offers to remove any
   folder in it that is no lane. It may not be the lane root, inside it or around it.
 - Keep the variable set while slots live there: without it lane no longer sees them.
