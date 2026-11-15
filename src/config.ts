@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 // Where lane works, from the environment. The two folders have no default: every machine keeps
 // its clones somewhere else, and a guessed folder would put slots in the wrong place.
 function folder(name: string): string {
@@ -19,6 +21,34 @@ export const config = {
   /** The folder that holds the main clones; `<repo>` names one of them. */
   get repos(): string {
     return folder('LANE_REPOS');
+  },
+  /**
+   * A second folder for new slots, used when the drive of the lane root is short of space
+   * (LANE_ROOT_SPARE); '' when there is none. Read at each call.
+   */
+  get spareRoot(): string {
+    return process.env.LANE_ROOT_SPARE ?? '';
+  },
+  /** The lane root, then the spare one if set. Neither may hold the other: `lane clean` would see its slots as leftovers. */
+  get roots(): string[] {
+    const root = folder('LANE_ROOT');
+    const spare = this.spareRoot;
+    if (!spare) return [root];
+    const norm = (p: string) => path.resolve(p).toLowerCase().replace(/[\\/]+$/, '') + path.sep;
+    const [a, b] = [norm(root), norm(spare)];
+    if (a.startsWith(b) || b.startsWith(a)) {
+      throw new Error(`LANE_ROOT_SPARE (${spare}) must be a folder of its own, not LANE_ROOT (${root}) nor inside or around it`);
+    }
+    return [root, spare];
+  },
+  /**
+   * Free space a drive must have for a new slot, in GB (LANE_MIN_FREE_GB). Not set: 10 with a
+   * spare root, else 0 (no check). Read at each call.
+   */
+  get minFreeGb(): number {
+    const n = Number(process.env.LANE_MIN_FREE_GB);
+    if (process.env.LANE_MIN_FREE_GB && n >= 0) return n;
+    return this.spareRoot ? 10 : 0;
   },
   /** Slots per repository; a full pool lists who holds what instead of taking a slot. */
   maxSlots: Number(process.env.LANE_MAX_SLOTS || 4),

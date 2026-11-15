@@ -18,16 +18,57 @@ export function isInside(child: string, parent: string): boolean {
 }
 
 /**
- * Whether a path is under the lane root. Git prints long paths; the root may be given in another
- * form of the same folder (a Windows 8.3 short name such as RUNNER~1, a symlink), so compare both.
+ * Whether a path is under a lane root (the spare one counts). Git prints long paths; a root may
+ * be given in another form of the same folder (a Windows 8.3 short name such as RUNNER~1, a
+ * symlink), so compare both.
  */
 export function underRoot(p: string): boolean {
-  if (isInside(p, config.root)) return true;
-  try {
-    return isInside(p, fs.realpathSync.native(config.root));
-  } catch {
-    return false;
+  return config.roots.some((root) => {
+    if (isInside(p, root)) return true;
+    try {
+      return isInside(p, fs.realpathSync.native(root));
+    } catch {
+      return false;
+    }
+  });
+}
+
+/** Free space on a folder's drive; a test may replace `freeGb`. */
+export const disk = {
+  /** GB free for this user where `dir` is, or will be (its nearest existing parent); null when it cannot be read. */
+  freeGb(dir: string): number | null {
+    let at = path.resolve(dir);
+    while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
+    try {
+      const s = fs.statfsSync(at);
+      return (s.bavail * s.bsize) / 1024 ** 3;
+    } catch {
+      return null;
+    }
+  },
+};
+
+/**
+ * The root for a new slot: the first one whose drive has `minFreeGb` free (a drive that cannot
+ * be read counts as having room). No check with `minFreeGb` 0. Throws with the figures when no
+ * root has room: a slot made on a full drive fails halfway through its checkout or install.
+ */
+export function rootForNewSlot(roots: readonly string[], minFreeGb: number): string {
+  const first = roots[0];
+  if (first === undefined) throw new Error('no lane root');
+  if (minFreeGb <= 0) return first;
+  const seen: string[] = [];
+  for (const root of roots) {
+    const free = disk.freeGb(root);
+    if (free === null || free >= minFreeGb) {
+      if (root !== first) log(`disk: ${seen.join(', ')}, under ${minFreeGb} GB: the new slot goes to ${root}`);
+      return root;
+    }
+    seen.push(`${root} has ${free.toFixed(1)} GB free`);
   }
+  const spare = roots.length > 1 ? '' : ', or name a folder on another drive in LANE_ROOT_SPARE';
+  throw new Error(`no room for a new slot: ${seen.join(', ')}, under ${minFreeGb} GB (LANE_MIN_FREE_GB). ` +
+    `Free some space (lane clean, lane remove)${spare}`);
 }
 
 /** Deletes a folder; on Windows through the \\?\ form so long paths (node_modules, Gradle) work. */
@@ -73,11 +114,11 @@ export function rmLaneFolder(dir: string): boolean {
   return false;
 }
 
-/** Folders under the lane root that no repository knows as a worktree (a failed removal's leftovers). */
+/** Folders under the lane roots that no repository knows as a worktree (a failed removal's leftovers). */
 export function leftovers(knownNames: readonly string[]): string[] {
-  if (!fs.existsSync(config.root)) return [];
   const known = new Set(knownNames.map((n) => n.toLowerCase()));
-  return fs.readdirSync(config.root, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !known.has(e.name.toLowerCase()))
-    .map((e) => path.join(config.root, e.name));
+  return config.roots.filter((root) => fs.existsSync(root)).flatMap((root) =>
+    fs.readdirSync(root, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.') && !known.has(e.name.toLowerCase()))
+      .map((e) => path.join(root, e.name)));
 }

@@ -60,7 +60,9 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
   package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
   <repo> is a folder in ${process.env.LANE_REPOS || '$LANE_REPOS'}.
-  Env: LANE_ROOT and LANE_REPOS (required, no default), LANE_MAX_SLOTS, LANE_PORT_STRIDE.`;
+  Env: LANE_ROOT and LANE_REPOS (required, no default), LANE_MAX_SLOTS, LANE_PORT_STRIDE,
+  LANE_ROOT_SPARE (a second folder for new slots once the lane root's drive has less than
+  LANE_MIN_FREE_GB free; 10 GB when not set).`;
 
 // Everything after "--" is the command for `lane with`, passed through untouched.
 const argv = process.argv.slice(2);

@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { MainClone } from './checkout.ts';
 import { config, poolMax } from './config.ts';
+import { rootForNewSlot } from './fsutil.ts';
 import { Lane } from './lane.ts';
 import type { Target } from './target.ts';
 import { printTable } from './text.ts';
@@ -102,7 +103,10 @@ export class SlotPool {
         throw new Error(`all ${max} slots of ${this.clone.name}${pool ? ` in pool ${pool}` : ''} are in use. lane never takes ` +
           `a slot held for something else: give one back (lane done) once its work is pushed, or ${raise}`);
       }
-      const dest = path.join(config.root, slotName(this.clone.name, choice.n));
+      // A slot to reuse stays where it is (it may be on the spare root); only a new one is placed.
+      const dest = choice.kind === 'reuse'
+        ? slots.find((l) => l.slot === choice.n)?.dir ?? path.join(config.root, slotName(this.clone.name, choice.n))
+        : path.join(rootForNewSlot(config.roots, config.minFreeGb), slotName(this.clone.name, choice.n));
       const lease = randomBytes(3).toString('hex');
       const reason = lockReason(task, new Date(), lease);
       const locked = choice.kind === 'create'
@@ -137,7 +141,7 @@ export class SlotPool {
 
   /** A new slot's folder must not exist, or be an empty leftover. */
   private clearFolder(dest: string): void {
-    fs.mkdirSync(config.root, { recursive: true });
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
     if (!fs.existsSync(dest)) return;
     if (fs.readdirSync(dest).length > 0) throw new Error(`${dest} exists but is no worktree of ${this.clone.name}; move it away`);
     fs.rmdirSync(dest);
