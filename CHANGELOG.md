@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/vannt-dev/lane/compare/v0.11.0...v0.12.0) (2026-11-15)
+
+
+### Features
+
+* **pool:** spare root for new slots when the lane root's drive is short of space ([#37](https://github.com/vannt-dev/lane/issues/37)) ([6cca28d](https://github.com/vannt-dev/lane/commit/6cca28d73ec6c98c5694e300350444825d37ef9d))
+
 ## [0.11.0](https://github.com/vannt-dev/lane/compare/v0.10.2...v0.11.0) (2026-11-12)
 
 
