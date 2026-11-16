@@ -18,12 +18,12 @@ export function isInside(child: string, parent: string): boolean {
 }
 
 /**
- * Whether a path is under a lane root (the spare one counts). Git prints long paths; a root may
- * be given in another form of the same folder (a Windows 8.3 short name such as RUNNER~1, a
- * symlink), so compare both.
+ * Which lane root a path is under: 0 the lane root, 1 the spare one, -1 none. Git prints long
+ * paths; a root may be given in another form of the same folder (a Windows 8.3 short name such
+ * as RUNNER~1, a symlink), so compare both.
  */
-export function underRoot(p: string): boolean {
-  return config.roots.some((root) => {
+export function rootIndex(p: string): number {
+  return config.roots.findIndex((root) => {
     if (isInside(p, root)) return true;
     try {
       return isInside(p, fs.realpathSync.native(root));
@@ -33,18 +33,30 @@ export function underRoot(p: string): boolean {
   });
 }
 
-/** Free space on a folder's drive; a test may replace `freeGb`. */
+/** Whether a path is under a lane root (the spare one counts). */
+export const underRoot = (p: string) => rootIndex(p) >= 0;
+
+/** The nearest folder of `dir` that exists: itself, or the parent it will be made in. */
+function existing(dir: string): string {
+  let at = path.resolve(dir);
+  while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
+  return at;
+}
+
+/** Facts about drives; a test may replace either. */
 export const disk = {
-  /** GB free for this user where `dir` is, or will be (its nearest existing parent); null when it cannot be read. */
+  /** GB free for this user where `dir` is, or will be; null when it cannot be read. */
   freeGb(dir: string): number | null {
-    let at = path.resolve(dir);
-    while (!fs.existsSync(at) && path.dirname(at) !== at) at = path.dirname(at);
     try {
-      const s = fs.statfsSync(at);
+      const s = fs.statfsSync(existing(dir));
       return (s.bavail * s.bsize) / 1024 ** 3;
     } catch {
       return null;
     }
+  },
+  /** Whether two folders (made or to be made) are on one drive: a rename can move between them. */
+  sameDrive(a: string, b: string): boolean {
+    return fs.statSync(existing(a)).dev === fs.statSync(existing(b)).dev;
   },
 };
 

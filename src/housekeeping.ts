@@ -7,6 +7,7 @@ import { leftovers, rmLaneFolder } from './fsutil.ts';
 import { beforeGiveBack } from './hooks.ts';
 import type { Pr } from './github.ts';
 import { Lane, stateText, type LaneState } from './lane.ts';
+import { spareHint } from './move.ts';
 import { currentDirs } from './sparse.ts';
 import { log, printTable } from './text.ts';
 
@@ -82,6 +83,7 @@ export function cmdList(opts: { local: boolean; json?: boolean }): void {
   if (opts.json) return log(JSON.stringify(lanes, null, 2));
   if (lanes.length === 0) return log(`no lanes under ${config.root}`);
   printTable(['lane', 'state', 'branch', 'local', 'PR / CI'], lanes.map(tableRow));
+  spareHint(lanes);
 }
 
 /**
