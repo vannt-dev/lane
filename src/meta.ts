@@ -17,6 +17,8 @@ export interface SlotMeta {
   installStamp?: string;
   /** The pool the slot belongs to (`lane new --pool`); none for the default pool. */
   pool?: string;
+  /** The branch the task started on; none for a detached slot. */
+  branch?: string;
 }
 
 function metaFile(dir: string): string | null {

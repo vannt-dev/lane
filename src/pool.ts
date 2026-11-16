@@ -116,7 +116,7 @@ export class SlotPool {
       if (!mine) continue;
       if (choice.kind === 'reuse') this.switchOrUnlock(mine, lease, target, dirs);
       const lane = this.slots().find((l) => l.slot === choice.n) ?? mine;
-      lane.setMeta({ task, lease, start: lane.git('rev-parse', 'HEAD'), released: false, ...(pool ? { pool } : {}) });
+      lane.setMeta({ task, lease, start: lane.git('rev-parse', 'HEAD'), released: false, branch: lane.branch || undefined, ...(pool ? { pool } : {}) });
       return { lane, reused: choice.kind === 'reuse' };
     }
     throw new Error(`could not lock a slot of ${this.clone.name}; another session keeps taking them, try again`);
