@@ -1,4 +1,5 @@
 // Looking after all lanes: list them, clean up merged ones, remove one for good.
+import { branchDrops } from './branches.ts';
 import { MainClone } from './checkout.ts';
 import { config } from './config.ts';
 import { findLane } from './find.ts';
@@ -114,6 +115,7 @@ export function cmdClean(opts: { yes: boolean; force: boolean }): void {
     if (act === 'remove') actions.push(() => log(l.remove()));
     if (act === 'give back') actions.push(() => giveBack(l));
   }
+  actions.push(...branchDrops(lanes));
   for (const dir of leftovers(lanes.map((l) => l.name))) {
     log(`remove     ${dir}  (folder no repository knows)`);
     actions.push(() => rmLaneFolder(dir) && log(`removed ${dir}`));

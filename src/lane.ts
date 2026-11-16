@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { locks } from './checks.ts';
 import { Checkout, MainClone } from './checkout.ts';
+import { dropEmptyBranch } from './branches.ts';
 import { rmLaneFolder, samePath, underRoot } from './fsutil.ts';
 import { prFor, type Pr } from './github.ts';
 import { mergedInto } from './merged.ts';
@@ -85,6 +86,11 @@ export class Lane extends Checkout {
     return this.locked !== null ? parseReason(this.locked).task : this.meta().task;
   }
 
+  /** The branch the task started on (by default named after the task, for slots taken before lane noted it). */
+  taskBranch(): string | undefined {
+    return this.meta().branch ?? this.task();
+  }
+
   /** The lease of the current hold, from the lock reason. */
   lease(): string | null {
     return this.locked !== null ? parseReason(this.locked).lease : null;
@@ -157,13 +163,15 @@ export class Lane extends Checkout {
   /** Detached (the branch is free elsewhere, deleted when safe), unlocked, folder and caches kept. */
   giveBack(safe: boolean): string {
     const task = this.task();
+    const started = this.taskBranch();
     const branch = this.branch;
     if (branch) this.git('switch', '--detach', '--quiet');
     if (branch && safe) this.clone.tryGit('branch', '-D', branch);
     if (this.locked !== null) this.clone.tryGit('worktree', 'unlock', this.dir);
     this.setMeta({ task, released: true, releasedAt: Date.now() });
     const kept = branch ? `; local branch ${branch} ${safe ? 'deleted (its work is on the remote or merged)' : 'kept'}` : '';
-    return `gave back ${this.name}${task ? ` (was: ${task})` : ''}${kept}`;
+    const left = dropEmptyBranch(this.clone, started);
+    return `gave back ${this.name}${task ? ` (was: ${task})` : ''}${kept}${left ? `; ${left}` : ''}`;
   }
 
   /** Deletes the worktree, its folder and its local branch. */
