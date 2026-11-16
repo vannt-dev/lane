@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/vannt-dev/lane/compare/v0.13.0...v0.14.0) (2026-11-16)
+
+
+### Features
+
+* **move:** move a slot between the lane root and the spare root ([#43](https://github.com/vannt-dev/lane/issues/43)) ([983fbff](https://github.com/vannt-dev/lane/commit/983fbff86f27841c19aed0b7e7623cac476629a5))
+
+
+### Bug Fixes
+
+* **done:** delete the task's branch the slot moved off when it holds nothing ([#45](https://github.com/vannt-dev/lane/issues/45)) ([20e103b](https://github.com/vannt-dev/lane/commit/20e103b031d7fe60449f0ddc5dd78af1e9e4cec0))
+* **new:** a pull request checked out elsewhere gets a detached slot ([#44](https://github.com/vannt-dev/lane/issues/44)) ([9ba7c2d](https://github.com/vannt-dev/lane/commit/9ba7c2d4b7dc5e70088c87ab2eaf168089e458e8))
+
 ## [0.13.0](https://github.com/vannt-dev/lane/compare/v0.12.0...v0.13.0) (2026-11-15)
 
 
