@@ -146,14 +146,32 @@ export function targetFor(clone: MainClone, task: string, opts: TargetOptions): 
   if (!slug) throw new Error(`${clone.name}: --pr needs a GitHub origin`);
   const out = tryRun('gh', ['pr', 'view', String(opts.pr), '-R', slug, '--json', 'headRefName,isCrossRepository,state']);
   if (!out) throw new Error(`cannot read pull request #${opts.pr} of ${slug} (is gh logged in?)`);
-  const info = JSON.parse(out) as { headRefName: string; isCrossRepository: boolean; state: string };
-  const branch = info.isCrossRepository ? `pr-${opts.pr}` : info.headRefName;
-  if (clone.hasRef(`refs/heads/${branch}`)) throw new Error(`branch ${branch} is already checked out or exists in ${clone.name}`);
+  const info = JSON.parse(out) as PrInfo & { state: string };
   log(`pull request #${opts.pr} (${info.state.toLowerCase()})${info.isCrossRepository ? ', from a fork: pushing needs the fork' : ''}`);
-  if (!info.isCrossRepository) {
-    clone.git('fetch', 'origin', '--quiet', branch);
-    return new PrBranch(branch);
+  return prTarget(clone, opts.pr, info);
+}
+
+interface PrInfo {
+  headRefName: string;
+  isCrossRepository: boolean;
+}
+
+/**
+ * Pull request `n`'s branch: tracked when it is in this repository, fetched to pr-<n> from a
+ * fork. A branch is checked out in one worktree only: when it exists here already (the slot
+ * where the pull request is written, say), the lane is detached at the pull request's head.
+ */
+export function prTarget(clone: MainClone, n: number, info: PrInfo): Target {
+  const branch = info.isCrossRepository ? `pr-${n}` : info.headRefName;
+  const remote = info.isCrossRepository ? `pull/${n}/head` : branch;
+  if (clone.hasRef(`refs/heads/${branch}`)) {
+    clone.git('fetch', 'origin', '--quiet', remote);
+    const head = clone.git('rev-parse', 'FETCH_HEAD');
+    const where = clone.worktrees().find((w) => w.branch === branch)?.path;
+    log(`note: branch ${branch} is ${where ? `checked out in ${where}` : 'here already'}; this lane is detached at ` +
+      `the pull request's head ${head.slice(0, 7)} (commits go on the branch${where ? ' there' : ''})`);
+    return new Detached(head);
   }
-  clone.git('fetch', 'origin', '--quiet', `pull/${opts.pr}/head:${branch}`);
-  return new LocalBranch(branch);
+  clone.git('fetch', 'origin', '--quiet', info.isCrossRepository ? `${remote}:${branch}` : remote);
+  return info.isCrossRepository ? new LocalBranch(branch) : new PrBranch(branch);
 }
