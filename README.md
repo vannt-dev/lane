@@ -99,6 +99,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane list [--local] [--json]` | Every lane: held (task, for how long, and whether it looks abandoned) or free, branch, local changes, PR and CI (`--local`: no GitHub calls). `--json` prints the same as one JSON array, see For scripts. |
 | `lane clean [--yes] [--force]` | Gives back the lanes whose work merged (see Merged), removes lanes whose folder is gone and leftover folders, then fast-forwards the main clones. A merged lane still held stays, since follow-up rounds (review fixes, bugs) reuse it, unless its hold looks abandoned or `--force`; one with a claim or a process in it always stays. |
 | `lane rm <lane> [--force]` | Deletes a slot for good. Refuses a held slot or unpushed work without `--force`. |
+| `lane move <lane> --to main\|spare [--lease ID]` | Moves a slot between the lane root and the spare root (see A spare root). |
 | `lane port <usual port> [k]` | Port k (0 to stride - 1) of this slot's range: the usual port + slot x `LANE_PORT_STRIDE` + k. |
 | `lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. A lane that does not merge is listed with the lane it conflicts with and the files. When the checks fail it looks for the lanes to blame, see Which lanes break each other (`--no-bisect` skips that). Kept and held when it fails, to look at. |
 | `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
@@ -284,6 +285,25 @@ setx LANE_MIN_FREE_GB 15        # optional, 10 with a spare root
 - Keep the variable set while slots live there: without it lane no longer sees them.
 - `--link-deps` links from a lane on the same drive (a hard link cannot cross drives); with
   none there, it installs.
+
+### Moving a slot back
+
+```sh
+lane move myrepo-3 --to main                 # a free slot
+lane move myrepo-3 --to main --lease 4f9a1c  # your own held slot
+```
+
+- Once the lane root's drive has `LANE_MIN_FREE_GB` free again, `lane list` names the slots
+  on the spare root and the command that moves each back. `--to spare` moves the other way.
+- The drive the slot goes to must have `LANE_MIN_FREE_GB` free.
+- On one drive git moves the folder with everything in it. Across drives the slot is made
+  again at the new root: same branch (or commit), same sparse folders, same hold and pool;
+  the old folder is deleted. Dependencies and build caches stay behind, so a slot with
+  uncommitted or unpushed work is refused there.
+- A held slot moves only for its holder, with the hold's `--lease`; made again, it is set up
+  again (dependencies installed). A free slot is locked for the move and left free; the next
+  `lane new` that takes it installs its dependencies.
+- A slot with a claim or a process in it is not moved.
 
 ## Pools: reviews apart from other work
 

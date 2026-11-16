@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdBrief, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdNew, cmdPort, cmdRelease, cmdRemove,
+  cmdBrief, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdMove, cmdNew, cmdPort, cmdRelease, cmdRemove,
   BISECT_MAX, cmdSync, cmdVerify, cmdWith, config,
 } from '../src/index.ts';
 
@@ -43,6 +43,10 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
                              rounds reuse it) unless --force; one with a claim or a process
                              in it always stays
   lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work)
+  lane move <lane> --to main|spare [--lease ID]
+                             Move a slot to the lane root or the spare one (lane list says when
+                             the lane root has room again). Across drives the slot is made
+                             again: only with its work pushed; a held slot with its --lease
   lane port <usual port> [k] Port k of this slot's range: usual + slot x ${config.portStride} + k
 
   lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]
@@ -86,6 +90,7 @@ const options = {
     'no-sparse': { type: 'boolean', default: false },
     'link-deps': { type: 'boolean' },
     pool: { type: 'string' },
+    to: { type: 'string' },
     open: { type: 'boolean', default: false },
     agent: { type: 'string' },
     local: { type: 'boolean', default: false },
@@ -136,6 +141,7 @@ function main(): number {
   } else if (cmd === 'list') cmdList({ local: values.local, json: values.json });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
+  else if (cmd === 'move' && one && values.to !== undefined) cmdMove(a, { to: values.to, lease: values.lease });
   else if (cmd === 'verify' && one) {
     const bisectMax = values['bisect-max'] === undefined ? undefined : whole(values['bisect-max'], '--bisect-max', 0, 1000);
     return cmdVerify(a, { cmds: values.cmd, keep: values.keep, bisect: !values['no-bisect'], bisectMax });
