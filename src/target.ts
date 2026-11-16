@@ -83,8 +83,8 @@ class PrBranch extends Target {
   }
 }
 
-/** A branch that exists locally only (a fork's pull request, fetched). */
-class LocalBranch extends Target {
+/** A branch that exists locally (a fork's pull request, fetched; a slot made again elsewhere). */
+export class LocalBranch extends Target {
   readonly branch: string;
 
   constructor(branch: string) {
