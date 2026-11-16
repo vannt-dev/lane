@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.0](https://github.com/vannt-dev/lane/compare/v0.12.0...v0.13.0) (2026-11-15)
+
+
+### Features
+
+* **list:** lane list --json for scripts and agents ([#40](https://github.com/vannt-dev/lane/issues/40)) ([5cc6226](https://github.com/vannt-dev/lane/commit/5cc6226904a9e27e2805057428c0295b952d0ae3))
+* **verify:** name the lanes that break each other ([#41](https://github.com/vannt-dev/lane/issues/41)) ([a1b80d3](https://github.com/vannt-dev/lane/commit/a1b80d31086f5457133ed9b1e125594e3a448812))
+
 ## [0.12.0](https://github.com/vannt-dev/lane/compare/v0.11.0...v0.12.0) (2026-11-15)
 
 
