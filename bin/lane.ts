@@ -29,6 +29,7 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
       A .lane.json in the main clone runs the repository's own commands: "postCreate" at
       the end of lane new, "preDone" before a lane is given back.
   lane new <repo> --pr <n>   A slot on an existing pull request's branch (to test or finish it)
+                             (detached at its head when the branch is checked out elsewhere)
   lane done [<lane>] [--lease ID] [--force]
                              Give the slot back once its work is pushed or merged; with --lease,
                              only while the slot is still held under that lease
