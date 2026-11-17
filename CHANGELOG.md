@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.1](https://github.com/vannt-dev/lane/compare/v0.14.0...v0.14.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* list every known agent in the --agent error ([#47](https://github.com/vannt-dev/lane/issues/47)) ([3305a14](https://github.com/vannt-dev/lane/commit/3305a14721aada44f46707784f5b008011796ed3))
+
 ## [0.14.0](https://github.com/vannt-dev/lane/compare/v0.13.0...v0.14.0) (2026-11-16)
 
 
