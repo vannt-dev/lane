@@ -33,7 +33,7 @@ interface NewOptions extends TargetOptions {
 export function cmdNew(repo: string, task: string | undefined, opts: NewOptions): string {
   const clone = new MainClone(repo);
   const name = task ?? (opts.pr !== undefined ? `pr-${opts.pr}` : undefined);
-  if (opts.agent !== undefined && !opts.agent.trim()) throw new Error('--agent needs a name (claude, codex, gemini, opencode) or a command');
+  if (opts.agent !== undefined && !opts.agent.trim()) throw new Error(`--agent needs a name (${[...AGENTS.keys()].join(', ')}) or a command`);
   if (!name) throw new Error('lane new needs a task name, or --pr <number>');
   const pool = new SlotPool(clone);
   // Before targetFor: the task's own branch exists already, and "branch exists" hides the cause.

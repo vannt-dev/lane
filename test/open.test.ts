@@ -46,5 +46,5 @@ test('lane new --agent names that agent in the command to run', () => {
   makeRepo('ag1');
   const { out } = capture(() => lane.cmdNew('ag1', 'feat-a', { install: false, open: false, agent: 'codex' }));
   assert.match(out, /next: cd .*ag1-1 && codex {3}\(agents: lane brief ag1-1/);
-  assert.throws(() => lane.cmdNew('ag1', 'feat-b', { install: false, open: false, agent: ' ' }), /--agent needs a name/);
+  assert.throws(() => lane.cmdNew('ag1', 'feat-b', { install: false, open: false, agent: ' ' }), /--agent needs a name \(claude, codex, gemini, opencode, copilot, cursor\)/);
 });

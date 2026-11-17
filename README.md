@@ -395,8 +395,8 @@ npm run typecheck   # tsc --noEmit: strict, no unused code
 npm test            # node --test, runs the .ts tests directly
 ```
 
-CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24. Every file stays under 150
-lines. `npm run diagrams` renders the overview diagram from `docs/diagrams/overview.mmd`.
+CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24.
+`npm run diagrams` renders the overview diagram from `docs/diagrams/overview.mmd`.
 
 | File | What is in it |
 | --- | --- |
@@ -404,20 +404,25 @@ lines. `npm run diagrams` renders the overview diagram from `docs/diagrams/overv
 | `src/index.ts` | What the command line calls |
 | `src/commands.ts` | new, done, free, port, brief |
 | `src/housekeeping.ts` | list, clean, rm |
+| `src/move.ts` | move: a slot between the lane root and the spare root |
 | `src/find.ts` | The lane a command is about |
 | `src/integrate.ts` | verify and sync (class `Integration`) |
 | `src/resources.ts` | claim, release, with, locks |
 | `src/checkout.ts` | `Checkout` (a git folder) and `MainClone extends Checkout` |
 | `src/lane.ts` | `Lane extends Checkout`: state, merged, giving back, removal |
+| `src/branches.ts` | A task's own branch left behind once the slot moved off it, deleted when it holds nothing |
 | `src/meta.ts` | A slot's `lane.json` |
 | `src/merged.ts` | Merged work found offline |
 | `src/stale.ts` | Left-behind holds, processes using a folder |
 | `src/pool.ts` | `SlotPool` and the pure `pickSlot` rule |
 | `src/target.ts` | `Target` and its kinds: a new branch, a PR's branch, a fork's, detached |
 | `src/setup.ts` | `LaneSetup`: submodules, local files, install, notes, hooks |
+| `src/sparse.ts` | Sparse slots (`--sparse`): the folders a lane checks out |
+| `src/linkdeps.ts` | `node_modules` hard-linked from a slot installed from the same lockfile (`--link-deps`) |
 | `src/hooks.ts` | The repository's `.lane.json` commands (`postCreate`, `preDone`) |
 | `src/checks.ts` | Which checks, and running them under the build cap |
 | `src/locks.ts`, `src/lock-state.ts` | Locks on shared things |
 | `src/github.ts` | A lane's pull request through `gh` |
 | `src/detect.ts`, `src/worktrees.ts`, `src/text.ts` | Pure helpers |
 | `src/fsutil.ts`, `src/proc.ts`, `src/config.ts` | Paths and removal, running programs, settings |
+| `src/git-env.ts` | The environment for running git on another repository, without a git hook's variables |
