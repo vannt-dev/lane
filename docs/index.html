@@ -561,7 +561,7 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
 <span class="dim">$</span> lane verify myrepo              <span class="dim"># before merging: do the two pass together?</span>
 <span class="dim"># merge feat/a's pull request, then:</span>
 <span class="dim">$</span> lane sync myrepo --push         <span class="dim"># feat/b onto the new base, checked again, pushed</span>
-<span class="dim">$</span> lane clean --yes                <span class="dim"># merged slots back to the pool, main clone pulled</span></pre>
+<span class="dim">$</span> lane clean --yes --force        <span class="dim"># merged slots back to the pool, main clone pulled</span></pre>
         <h3 data-i18n="round.junto.h">With junto</h3>
         <p class="note" data-i18n="round.junto">
           With <a href="https://github.com/vannt-dev/junto">junto</a> each lane keeps its own task and quality gates, and
@@ -620,7 +620,15 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
             <td data-i18n="cmd.new">
               Take a slot for a task: new branch, submodules, env files, install when lockfiles changed, notes for the agent.
               <code>--pr &lt;n&gt;</code> works on a pull request's branch; <code>--sparse &lt;folder&gt;</code> checks out only those
-              folders; <code>--pool review</code> keeps reviews in slots of their own.
+              folders; <code>--pool review</code> keeps reviews in slots of their own; <code>--agent &lt;name&gt;</code> names another agent
+              CLI (Codex, Gemini, OpenCode, Copilot, Cursor, or any command line) for <code>--open</code> and the printed command.
+            </td>
+          </tr>
+          <tr>
+            <th><code>.lane.json</code></th>
+            <td data-i18n="cmd.hooks">
+              The repository's own commands: <code>postCreate</code> runs at the end of <code>lane new</code>, <code>preDone</code> before a
+              slot is given back.
             </td>
           </tr>
           <tr>
@@ -638,6 +646,10 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
           <tr>
             <th><code>lane clean</code> · <code>lane free</code> · <code>lane rm</code></th>
             <td data-i18n="cmd.clean">Give back merged lanes, free a hold left behind by a closed session, delete a slot for good.</td>
+          </tr>
+          <tr>
+            <th><code>lane move &lt;lane&gt; --to main|spare</code></th>
+            <td data-i18n="cmd.move">Move a slot between the lane root and the spare root, when a drive fills up or has room again.</td>
           </tr>
           <tr>
             <th><code>lane claim</code> · <code>lane with</code> · <code>lane port</code></th>
@@ -685,7 +697,7 @@ export LANE_ROOT="$HOME/wt"</pre>
         <h3 data-i18n="gs.lim.h">Limits</h3>
         <ul>
           <li data-i18n="lim.1">
-            <code>lane new --open</code> starts Claude Code in a new Windows Terminal tab on Windows, in a new tmux window inside tmux; elsewhere it prints the command to run.
+            <code>lane new --open</code> starts Claude Code (or the agent <code>--agent</code> names) in a new Windows Terminal tab on Windows, in a new tmux window inside tmux; elsewhere it prints the command to run.
           </li>
           <li data-i18n="lim.2">
             Windows does not tell another process's working folder, so a shell sitting in a slot is not seen when lane looks for left-behind
@@ -748,11 +760,14 @@ export LANE_ROOT="$HOME/wt"</pre>
             'Với <a href="https://github.com/vannt-dev/junto">junto</a>, mỗi lane giữ task và các quality gate riêng, và <code>/junto:status all</code> hiện task của mọi lane trong một bảng (hoặc một trang board với <code>/junto:status html</code>). junto cảnh báo khi base đã đổi sau lần verify của một lane, đúng bài học mà <code>lane sync</code> xử lý.',
           'cmd.h2': 'Các lệnh',
           'cmd.new':
-            'Lấy một slot cho task: nhánh mới, submodule, file env, cài thư viện khi lockfile đổi, ghi chú cho agent. <code>--pr &lt;n&gt;</code> làm trên nhánh của một pull request; <code>--sparse &lt;thư mục&gt;</code> chỉ lấy các thư mục đó; <code>--pool review</code> để việc review dùng slot riêng.',
+            'Lấy một slot cho task: nhánh mới, submodule, file env, cài thư viện khi lockfile đổi, ghi chú cho agent. <code>--pr &lt;n&gt;</code> làm trên nhánh của một pull request; <code>--sparse &lt;thư mục&gt;</code> chỉ lấy các thư mục đó; <code>--pool review</code> để việc review dùng slot riêng; <code>--agent &lt;tên&gt;</code> chọn agent CLI khác (Codex, Gemini, OpenCode, Copilot, Cursor, hoặc câu lệnh bất kỳ) cho <code>--open</code> và cho câu lệnh được in ra.',
+          'cmd.hooks':
+            'Lệnh riêng của repository: <code>postCreate</code> chạy ở cuối <code>lane new</code>, <code>preDone</code> chạy trước khi trả slot.',
           'cmd.done': 'Trả slot khi việc đã được push hoặc merge.',
           'cmd.list': 'Mọi lane: đang giữ hay trống, nhánh, thay đổi chưa commit, pull request và CI. <code>--json</code> in ra dạng JSON cho script và agent.',
           'cmd.verify': 'Merge mọi lane đang mở với nhau rồi kiểm tra; sau một lần merge, rebase các lane còn lại và kiểm tra lại.',
           'cmd.clean': 'Trả các lane đã merge, giải phóng slot bị bỏ quên khi một phiên đóng, xóa hẳn một slot.',
+          'cmd.move': 'Chuyển một slot giữa thư mục lane chính và thư mục dự phòng, khi ổ đĩa gần đầy hoặc đã có chỗ trở lại.',
           'cmd.claim': 'Máy ảo cho từng lane một, giới hạn số build nặng, một dải cổng cho mỗi slot.',
           'cmd.brief': 'Quy tắc cho agent làm việc trong lane, để dán vào task của nó.',
           'gs.h2': 'Bắt đầu',
@@ -766,7 +781,7 @@ export LANE_ROOT="$HOME/wt"</pre>
           'gs.env': '<code>LANE_REPOS</code> chứa các bản clone, <code>LANE_ROOT</code> chứa các slot. Cả hai đều bắt buộc.',
           'gs.lim.h': 'Giới hạn',
           'lim.1':
-            '<code>lane new --open</code> mở Claude Code trong một tab Windows Terminal mới trên Windows, trong một cửa sổ tmux mới khi đang ở trong tmux; trường hợp khác, lệnh in ra câu lệnh để bạn tự chạy.',
+            '<code>lane new --open</code> mở Claude Code (hoặc agent mà <code>--agent</code> chỉ định) trong một tab Windows Terminal mới trên Windows, trong một cửa sổ tmux mới khi đang ở trong tmux; trường hợp khác, lệnh in ra câu lệnh để bạn tự chạy.',
           'lim.2':
             'Windows không cho biết thư mục làm việc của tiến trình khác, nên khi tìm slot bị bỏ quên, lane không thấy một shell đang đứng trong slot; tiến trình có tên slot trên dòng lệnh thì vẫn thấy.',
           'lim.3': 'Mỗi nhánh chỉ checkout được ở một lane một lúc; <code>lane done</code> tách slot khỏi nhánh.',
