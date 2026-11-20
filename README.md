@@ -29,8 +29,9 @@ text can still break each other once both are in. lane handles those parts:
   dependencies are installed again only when a lockfile changed.
 - **Safe holds.** A slot is held with `git worktree lock` and a lease; another session never
   takes it, and `lane done` refuses to give back work that is not on the remote.
-- **Shared things.** `lane claim emulator`, `lane with build -- <cmd>` (two at a time) and a
-  port range per slot (`lane port 3000`).
+- **Shared things.** `lane claim emulator`, `lane with build -- <cmd>` (heavy commands wait in
+  line for a shared budget of build slots, at low CPU priority) and a port range per slot
+  (`lane port 3000`).
 - **Merge safety.** `lane verify` merges all open lanes together and runs the checks before
   the first one merges; `lane sync` rebases the rest and checks them again after.
 - **Agent notes.** Each lane gets a `CLAUDE.local.md` (and `lane brief` for sub-agents) with
@@ -87,6 +88,8 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_POOLS` | Max slots of named pools, e.g. `review=2,ci=1` (see Pools) |
 | `LANE_ROOT_SPARE` | A second folder for new slots, on another drive, used when the lane root's drive is short of space (see A spare root) |
 | `LANE_MIN_FREE_GB` | Free space a drive must have for a new slot, in GB. Not set: 10 with `LANE_ROOT_SPARE`, else no check |
+| `LANE_WITH_SLOTS` | Slots of `lane with` resources, e.g. `build=6,gpu=1` (default: build 2, others 1; see Heavy commands) |
+| `LANE_LOW_CPU` | `0`: commands run by `lane with` keep normal CPU priority (default: below normal) |
 
 ## Commands
 
@@ -105,8 +108,9 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
 | `lane brief [<lane>]` | The rules for an agent working in a lane, to paste at the top of its task: an agent started by another session does not read `CLAUDE.local.md`. |
 | `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. |
-| `lane with <res> [--slots N] -- <cmd>` | Runs a command holding one of N slots; `build` has 2 (RAM). |
-| `lane locks` | Who holds what. |
+| `lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <cmd>` | Runs a command holding K (default 1) of the resource's N slots (`LANE_WITH_SLOTS`, else `build` 2 and others 1), waiting in line for them, at below-normal CPU priority. See Heavy commands. |
+| `lane locks` | Who holds what, and who waits in line. |
+| `lane stats [--days N]` | How long `lane with` commands waited and ran over the last N days (default 7), per command: to size `LANE_WITH_SLOTS` for the machine. |
 
 **Checks** (`verify`, `sync`, `brief`): `--cmd` (repeatable), else an untracked `.lanecheck`
 in the main clone (one command per line), else what the checkout has: the `typecheck`,
@@ -122,6 +126,42 @@ lane verify myrepo          # before merging: do the two still pass together?
 lane sync myrepo --push     # feat/b onto the new base, checked again, pushed
 lane clean --yes --force    # merged slots given back (not one still in use), the main clone pulled
 ```
+
+## Heavy commands: lane with
+
+Several agents on one machine each start a test suite, a type check and a build, and the
+machine stalls: tests time out for no fault of the code. `lane with` gives a resource a budget
+of slots shared by every lane, and a command takes as many as it weighs:
+
+```sh
+setx LANE_WITH_SLOTS "build=6"                             # this machine: 6 slots of build
+lane with build --cost 2 -- npx vitest run                 # a whole test suite: 2 slots
+lane with build -- npx eslint src/changed.ts               # a light command: 1 slot
+lane with build --cost 2 --prio high -- npm run build      # waits ahead of the normal ones
+```
+
+- **In line.** A command that finds too few free slots waits in line and says its place every
+  30 seconds (`waiting for build: 6 of 6 slots in use, 2nd in line`); `lane locks` lists the
+  line. Only the head of the line takes slots, so a command that needs 2 is not passed over
+  forever by commands that need 1. `--prio high` waits ahead of every normal waiter but never
+  stops a command that is running. A waiter whose process ended leaves the line.
+- **All or nothing.** A command takes all its slots at once or none; a cost above the slots
+  fails at once.
+- **Low CPU priority.** The command runs below normal priority (Windows priority class, Unix
+  nice), so the editor, browser and calls stay smooth. `LANE_LOW_CPU=0` turns it off.
+- **Nested.** The command gets `LANE_WITH` naming what it holds; a `lane with` of the same
+  resource inside it (a test script that calls `lane with build` itself, a `pre-push` hook)
+  runs at once instead of waiting for itself.
+- **Stats.** Each run adds a line to `<lane root>/.locks/stats.log`: when, the resource, a
+  short label (the tool and its subcommand, or `--label`; never the arguments), the cost, the
+  wait, the run time and the exit code. `lane stats --days 3` sums them up per command: long
+  waits mean too few slots, a busy machine with short waits means too many.
+- `lane verify` and `lane sync` run each check with one build slot.
+
+A sample Claude Code hook, [`examples/heavy-commands-hook.mjs`](examples/heavy-commands-hook.mjs),
+refuses a heavy command (vitest, jest, tsc, pytest, test and build tools) run inside a lane
+without `lane with`, and answers with the command to use. The file says how to add it to
+`.claude/settings.json`; adjust its list to what is heavy on your machine.
 
 ## Which lanes break each other
 
@@ -228,6 +268,7 @@ lane list --json --local | jq -r '.[] | select(.state == "free") | .path'   # fr
   npm cache, Flutter pub cache) are shared by the tools themselves.
 - Locks on shared things live in `<lane root>/.locks`. A `claim` holds until released, its
   lane hold ends, its lane is removed, or three hours pass; a `with` slot is freed when its command ends.
+  Commands waiting for a `with` resource are in `.locks/queue/<resource>`, the run log in `.locks/stats.log`.
 - `CLAUDE.local.md` (ignored through `.git/info/exclude`) tells Claude Code in the lane to
   claim the emulator, run heavy builds through `lane with build`, use `lane port`, keep one
   PR per lane, leave versions and the CHANGELOG alone, and give the slot back when done.
@@ -407,7 +448,7 @@ CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24.
 | `src/move.ts` | move: a slot between the lane root and the spare root |
 | `src/find.ts` | The lane a command is about |
 | `src/integrate.ts` | verify and sync (class `Integration`) |
-| `src/resources.ts` | claim, release, with, locks |
+| `src/resources.ts` | claim, release, with, locks, stats |
 | `src/checkout.ts` | `Checkout` (a git folder) and `MainClone extends Checkout` |
 | `src/lane.ts` | `Lane extends Checkout`: state, merged, giving back, removal |
 | `src/branches.ts` | A task's own branch left behind once the slot moved off it, deleted when it holds nothing |
@@ -421,7 +462,9 @@ CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24.
 | `src/linkdeps.ts` | `node_modules` hard-linked from a slot installed from the same lockfile (`--link-deps`) |
 | `src/hooks.ts` | The repository's `.lane.json` commands (`postCreate`, `preDone`) |
 | `src/checks.ts` | Which checks, and running them under the build cap |
-| `src/locks.ts`, `src/lock-state.ts` | Locks on shared things |
+| `src/locks.ts`, `src/lock-state.ts` | Locks on shared things, and `lane with` (cost, nesting, low CPU) |
+| `src/queue.ts` | The line of commands waiting for a `lane with` resource |
+| `src/stats.ts` | The run log of `lane with`, and `lane stats` |
 | `src/github.ts` | A lane's pull request through `gh` |
 | `src/detect.ts`, `src/worktrees.ts`, `src/text.ts` | Pure helpers |
 | `src/fsutil.ts`, `src/proc.ts`, `src/config.ts` | Paths and removal, running programs, settings |

@@ -524,8 +524,8 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
           <div class="card">
             <h3 data-i18n="h.3.h">Shared things, one at a time</h3>
             <p data-i18n="h.3">
-              <code>lane claim emulator</code> waits for the Android emulator, <code>lane with build -- &lt;cmd&gt;</code> lets two heavy
-              builds run at once, and <code>lane port 3000</code> gives each slot its own range of ports.
+              <code>lane claim emulator</code> waits for the Android emulator, <code>lane with build --cost 2 -- &lt;cmd&gt;</code> puts heavy
+              commands in line for a shared budget of build slots, at low CPU priority, and <code>lane port 3000</code> gives each slot its own range of ports.
             </p>
           </div>
           <div class="card">
@@ -743,7 +743,7 @@ export LANE_ROOT="$HOME/wt"</pre>
             'Slot được giữ bằng <code>git worktree lock</code> và đọc lại theo lease của lần giữ này, nên hai phiên không bao giờ lấy cùng một slot. <code>lane done</code> không cho trả slot khi việc chưa có trên remote.',
           'h.3.h': 'Tài nguyên chung, lần lượt từng lane',
           'h.3':
-            '<code>lane claim emulator</code> chờ tới lượt dùng máy ảo Android, <code>lane with build -- &lt;cmd&gt;</code> cho tối đa hai bản build nặng chạy cùng lúc, và <code>lane port 3000</code> cho mỗi slot một dải cổng riêng.',
+            '<code>lane claim emulator</code> chờ tới lượt dùng máy ảo Android, <code>lane with build --cost 2 -- &lt;cmd&gt;</code> xếp các lệnh nặng vào hàng chờ chung một ngân sách slot build, chạy ở mức ưu tiên CPU thấp, và <code>lane port 3000</code> cho mỗi slot một dải cổng riêng.',
           'h.4.h': 'Kiểm tra cùng nhau',
           'h.4':
             '<code>lane verify</code> merge mọi lane đang mở lên base rồi chạy kiểm tra, trước khi lane đầu tiên được merge. Khi kiểm tra hỏng, nó chỉ ra lane hoặc cặp lane gây lỗi. <code>lane sync</code> rebase các lane còn lại sau mỗi lần merge rồi kiểm tra lại.',

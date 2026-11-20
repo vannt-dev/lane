@@ -2,7 +2,7 @@
 import { parseArgs } from 'node:util';
 import {
   cmdBrief, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdMove, cmdNew, cmdPort, cmdRelease, cmdRemove,
-  BISECT_MAX, cmdSync, cmdVerify, cmdWith, config,
+  BISECT_MAX, cmdStats, cmdSync, cmdVerify, cmdWith, config, withSlotsFor,
 } from '../src/index.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
@@ -63,9 +63,14 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
 
   lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator); ends with this lane's hold
   lane release <res>            Give it back
-  lane with <res> [--slots N] -- <command>
-                                Run a command holding one of N slots (default: build has 2)
-  lane locks                    Who holds what
+  lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <command>
+                                Run a command holding K (default 1) of the resource's N slots
+                                (build has 2, others 1; LANE_WITH_SLOTS="build=6" sets them),
+                                waiting in line (--prio high: ahead of normal waiters), at
+                                below-normal CPU priority (LANE_LOW_CPU=0: normal). A nested
+                                lane with of the same resource runs at once.
+  lane locks                    Who holds what, and who waits in line
+  lane stats [--days N]         Waiting and running times of lane with commands (default 7 days)
 
   Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
   package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
@@ -105,6 +110,10 @@ const options = {
     cmd: { type: 'string', multiple: true },
     'no-wait': { type: 'boolean', default: false },
     slots: { type: 'string' },
+    cost: { type: 'string' },
+    prio: { type: 'string' },
+    label: { type: 'string' },
+    days: { type: 'string' },
     help: { type: 'boolean', short: 'h', default: false },
   },
 } as const;
@@ -157,8 +166,13 @@ function main(): number {
   else if (cmd === 'release' && one) cmdRelease(a);
   else if (cmd === 'locks') cmdLocks();
   else if (cmd === 'with' && one && tail.length > 0) {
-    return cmdWith(a, tail, whole(values.slots ?? (a === 'build' ? '2' : '1'), '--slots', 1, 64));
-  } else {
+    if (values.prio !== undefined && values.prio !== 'high' && values.prio !== 'normal') throw new Error('--prio takes high or normal');
+    return cmdWith(a, tail, values.slots === undefined ? withSlotsFor(a) : whole(values.slots, '--slots', 1, 64), {
+      cost: values.cost === undefined ? undefined : whole(values.cost, '--cost', 1, 64),
+      prio: values.prio, label: values.label,
+    });
+  } else if (cmd === 'stats' && a === undefined) cmdStats(values.days === undefined ? 7 : whole(values.days, '--days', 1, 365));
+  else {
     console.error(HELP);
     return 2;
   }
