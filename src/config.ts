@@ -108,3 +108,15 @@ export const NO_HOOKS = ['-c', 'core.hooksPath=.lane-no-hooks', '-c', 'user.name
  * per line, in an untracked `.lanecopy` file at its root.
  */
 export const COPY_DEFAULT = ['.env', '.env.local', 'android/key.properties', '.claude/settings.local.json'];
+
+/**
+ * Slots of a `lane with` resource: `LANE_WITH_SLOTS="build=6,gpu=2"` sets them, else build has
+ * 2 and any other resource 1. Read at each call; `--slots` overrides it for one command.
+ */
+export function withSlotsFor(resource: string): number {
+  for (const part of (process.env.LANE_WITH_SLOTS ?? '').split(',')) {
+    const [name, n] = part.split('=').map((s) => s.trim());
+    if (name === resource && Number.isInteger(Number(n)) && Number(n) > 0) return Number(n);
+  }
+  return resource === 'build' ? 2 : 1;
+}

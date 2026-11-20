@@ -45,10 +45,10 @@ export function runLive(commandLine: string, cwd: string, extra: Record<string, 
  * Several = run directly, so characters like > or & stay literal; Windows .cmd/.bat tools
  * cannot run without a shell, so they get one with each argument quoted.
  */
-export function runArgv(argv: readonly string[], cwd?: string): number {
+export function runArgv(argv: readonly string[], cwd?: string, env?: NodeJS.ProcessEnv): number {
   const [cmd, ...args] = argv;
   if (cmd === undefined) throw new Error('no command given');
-  const opts = { stdio: 'inherit', windowsHide: true, cwd } as const;
+  const opts = { stdio: 'inherit', windowsHide: true, cwd, env } as const;
   if (args.length === 0) return spawnSync(cmd, { ...opts, shell: true }).status ?? 1;
   let r = spawnSync(cmd, args, opts);
   const code = errCode(r.error);

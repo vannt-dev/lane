@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Checkout } from './checkout.ts';
-import { config } from './config.ts';
+import { config, withSlotsFor } from './config.ts';
 import { checkCommands } from './detect.ts';
 import type { Holder } from './lock-state.ts';
 import { Locks } from './locks.ts';
@@ -24,12 +24,12 @@ export function checksFor(mainClone: Checkout, checkout: Checkout, custom?: read
   return checkCommands({ files: fs.readdirSync(checkout.dir), scripts, custom: listed });
 }
 
-/** Runs each check in a checkout, each holding a build slot; stops at the first failure. */
+/** Runs each check in a checkout, each holding a build slot (LANE_WITH_SLOTS); stops at the first failure. */
 export function runChecks(checkout: Checkout, cmds: readonly string[]): { ok: boolean; failed?: string } {
   const holder: Holder = { lane: path.basename(checkout.dir), lanePath: checkout.dir };
   for (const c of cmds) {
     log(`> ${c}   (in ${holder.lane})`);
-    if (locks().withSlot('build', 2, holder, [c], { cwd: checkout.dir }) !== 0) return { ok: false, failed: c };
+    if (locks().withSlot('build', withSlotsFor('build'), holder, [c], { cwd: checkout.dir }) !== 0) return { ok: false, failed: c };
   }
   return { ok: true };
 }

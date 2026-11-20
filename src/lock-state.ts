@@ -19,7 +19,7 @@ export interface LockInfo extends Partial<Lock> {
   stale: boolean;
 }
 
-function pidAlive(pid: number): boolean {
+export function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;

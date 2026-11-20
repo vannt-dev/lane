@@ -1,9 +1,12 @@
 // Shared things only one lane may use at a time (the Android emulator), and a cap on heavy
 // builds running at once (RAM). Locks are files under <lane root>/.locks.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { isStale, type Holder, type Lock, type LockInfo, type StaleRules } from './lock-state.ts';
+import { isStale, pidAlive, type Holder, type Lock, type LockInfo, type StaleRules } from './lock-state.ts';
 import { errCode, runArgv, sleepMs } from './proc.ts';
+import { Queue } from './queue.ts';
+import { commandLabel, logRun } from './stats.ts';
 
 type Say = (msg: string) => void;
 
@@ -70,12 +73,12 @@ export class Locks {
   }
 
   /** Tries `attempt` until it gives a value, saying now and then what it waits for. */
-  private waitFor<T>(attempt: () => T | null, waiting: () => string, pollMs: number, say: Say): T {
+  private waitFor<T>(attempt: () => T | null, waiting: () => string, pollMs: number, say: Say, tellMs = 60_000): T {
     let told = 0;
     for (;;) {
       const got = attempt();
       if (got !== null) return got;
-      if (Date.now() - told > 60_000) {
+      if (Date.now() - told > tellMs) {
         say(waiting());
         told = Date.now();
       }
@@ -109,15 +112,118 @@ export class Locks {
     });
   }
 
-  /** Runs a command while holding one of `slots` numbered locks (`build-1`, `build-2`, ...). */
-  withSlot(name: string, slots: number, holder: Holder, argv: readonly string[], opts: { say?: Say; cwd?: string } = {}): number {
+  /**
+   * Takes `cost` of the `slots` numbered locks (`build-1`, `build-2`, ...; just `build` when
+   * there is one slot), all or none: a part taken is given back. Returns the names, or null.
+   */
+  takeSlots(name: string, slots: number, cost: number, holder: Holder): string[] | null {
     const names = slots > 1 ? Array.from({ length: slots }, (_, i) => `${name}-${i + 1}`) : [name];
-    const got = this.waitFor(() => names.find((n) => !this.tryTake(n, { ...holder, pid: process.pid })) ?? null,
-      () => `waiting for a free ${name} slot (${slots} in use)...`, 5000, opts.say ?? console.log);
+    const got: string[] = [];
+    for (const n of names) {
+      if (got.length === cost) break;
+      if (!this.tryTake(n, holder)) got.push(n);
+    }
+    if (got.length === cost) return got;
+    for (const n of got) fs.rmSync(this.file(n), { force: true });
+    return null;
+  }
+
+  /** How many of the slots are held now. */
+  private inUse(name: string, slots: number): number {
+    const names = slots > 1 ? Array.from({ length: slots }, (_, i) => `${name}-${i + 1}`) : [name];
+    return names.filter((n) => {
+      const cur = this.read(n);
+      return cur !== null && !this.stale(cur);
+    }).length;
+  }
+
+  /**
+   * Runs a command while holding `cost` of `slots` numbered locks, waiting in line for them
+   * (see Queue), at below-normal CPU priority (LANE_LOW_CPU=0: normal). A command run by
+   * another `lane with` of the same resource (LANE_WITH names it) runs at once: its caller
+   * holds the slots already. Each run is logged for `lane stats`.
+   */
+  withSlot(name: string, slots: number, holder: Holder, argv: readonly string[], opts: WithOptions = {}): number {
+    const { cost = 1, prio = 'normal', pollMs = 2000, tellMs = 30_000, say = console.log } = opts;
+    if (cost > slots) throw new Error(`--cost ${cost} is more than the ${slots} slots of ${name}: raise --slots or LANE_WITH_SLOTS`);
+    if (heldByCaller(name)) return runArgv(argv, opts.cwd);
+    const me = { ...holder, pid: process.pid };
+    const queue = new Queue(path.join(this.dir, 'queue', name));
+    const start = Date.now();
+    const id = queue.join({ lane: holder.lane, pid: process.pid, cost, prio, since: start });
+    let place = 0;
+    let got: string[];
     try {
-      return runArgv(argv, opts.cwd);
+      got = this.waitFor(() => {
+        place = queue.line().findIndex((w) => w.id === id);
+        return place === 0 ? this.takeSlots(name, slots, cost, me) : null;
+      }, () => `waiting for ${name}: ${this.inUse(name, slots)} of ${slots} slots in use, ${ordinal(place + 1)} in line` +
+        `${cost > 1 ? ` (needs ${cost})` : ''}...`, pollMs, say, tellMs);
     } finally {
-      fs.rmSync(this.file(got), { force: true });
+      queue.leave(id);
+    }
+    const ran = Date.now();
+    let status = 1;
+    try {
+      const env = { ...process.env, LANE_WITH: [process.env.LANE_WITH, `${name}:${process.pid}`].filter(Boolean).join(',') };
+      status = lowCpu(() => runArgv(argv, opts.cwd, env));
+      return status;
+    } finally {
+      for (const n of got) fs.rmSync(this.file(n), { force: true });
+      logRun(path.dirname(this.dir), {
+        at: start, res: name, label: opts.label ?? commandLabel(argv), cost, waitMs: ran - start, runMs: Date.now() - ran, status,
+      });
     }
   }
+}
+
+export interface WithOptions {
+  say?: Say;
+  cwd?: string;
+  /** Slots the command needs (a heavy test run 2, a lint 1). */
+  cost?: number;
+  prio?: 'high' | 'normal';
+  /** The name in `lane stats`; else the tool and its subcommand. */
+  label?: string;
+  pollMs?: number;
+  /** How often a waiting command says its place in line. */
+  tellMs?: number;
+}
+
+/** Whether a `lane with` that is still running holds this resource for the process calling us. */
+function heldByCaller(name: string): boolean {
+  return (process.env.LANE_WITH ?? '').split(',').some((part) => {
+    const [res, pid] = part.split(':');
+    return res === name && Number(pid) > 0 && pidAlive(Number(pid));
+  });
+}
+
+/**
+ * Runs `fn` with this process at below-normal priority: a program it starts inherits it
+ * (Windows priority class, Unix nice). Put back after when the system allows it.
+ */
+function lowCpu<T>(fn: () => T): T {
+  if (process.env.LANE_LOW_CPU === '0') return fn();
+  let before: number | undefined;
+  try {
+    before = os.getPriority();
+    if (before < os.constants.priority.PRIORITY_BELOW_NORMAL) os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL);
+    else before = undefined;
+  } catch {
+    before = undefined;
+  }
+  try {
+    return fn();
+  } finally {
+    try {
+      if (before !== undefined) os.setPriority(before);
+    } catch {
+      // Unix: only root raises a priority again; this process ends soon anyway
+    }
+  }
+}
+
+function ordinal(n: number): string {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' } as Record<number, string>)[n % 10] ?? 'th';
+  return `${n}${s}`;
 }

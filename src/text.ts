@@ -41,7 +41,9 @@ function portRule(slot: number, stride: number): string {
 }
 
 const SHARED_RULES = [
-  '- Heavy commands (whole test suites, flutter/gradle/cargo builds) go through `lane with build -- <command>`: at most two run at once.',
+  '- Heavy commands (whole test suites, type checks, flutter/gradle/cargo builds) go through `lane with build -- <command>`, ' +
+    'with `--cost 2` for the heaviest (a whole test suite, a full build): they wait in line for the shared build slots ' +
+    'and run at low CPU priority. Run it in the background when the wait may be long.',
   '- The Android emulator: `lane claim emulator` before using it, `lane release emulator` right after.',
   '- One pull request for this lane. Do not bump the version or edit the CHANGELOG: releases are made after the lanes merge.',
 ];

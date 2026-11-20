@@ -51,7 +51,7 @@ test('withSlot uses the second slot when the first is busy', () => {
   const locks = new Locks(root);
   locks.tryTake('build-1', { lane: 'busy', pid: process.pid });
   const marker = path.join(root, 'seen.txt');
-  const cmd = `node -e "require('fs').writeFileSync(process.argv[1], require('fs').readdirSync(process.argv[2]).join(','))" "${marker}" "${path.join(root, '.locks')}"`;
+  const cmd = `node -e "require('fs').writeFileSync(process.argv[1], require('fs').readdirSync(process.argv[2]).filter(f => f.endsWith('.json')).join(','))" "${marker}" "${path.join(root, '.locks')}"`;
   assert.equal(locks.withSlot('build', 2, { lane: 'a' }, [cmd], { say: () => {} }), 0);
   assert.equal(fs.readFileSync(marker, 'utf8'), 'build-1.json,build-2.json');
   assert.deepEqual(locks.list().map((l) => l.name), ['build-1']);
