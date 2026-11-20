@@ -669,16 +669,15 @@ next: cd F:/demo/wt/dfk-2 &amp;&amp; claude   (agents: lane brief dfk-2; when pu
           <div>
             <h3 data-i18n="gs.pre.h">Prerequisites</h3>
             <ul>
-              <li data-i18n="gs.pre.1">Node 22.18 or newer: lane is TypeScript that Node runs as is, with no build step.</li>
+              <li data-i18n="gs.pre.1">Node 22.18 or newer.</li>
               <li>git</li>
               <li data-i18n="gs.pre.3"><code>gh</code>, logged in, for pull request and CI state (optional).</li>
             </ul>
-            <h3 data-i18n="gs.inst.h">Install from a clone</h3>
+            <h3 data-i18n="gs.inst.h">Install</h3>
             <p class="note" data-i18n="gs.inst">
-              Node does not run <code>.ts</code> files inside <code>node_modules</code>, so lane is not on npm.
+              From npm; <code>git lane</code> works too.
             </p>
-            <pre><span class="dim">$</span> git clone https://github.com/vannt-dev/lane
-<span class="dim">$</span> cd lane && npm install && npm link</pre>
+            <pre><span class="dim">$</span> npm install -g @vannt-dev/lane</pre>
           </div>
           <div>
             <h3 data-i18n="gs.env.h">Tell lane where things are</h3>
@@ -773,10 +772,10 @@ export LANE_ROOT="$HOME/wt"</pre>
           'gs.h2': 'Bắt đầu',
           'gs.sub': 'Làm ra và dùng hằng ngày trên Windows; CI chạy trên Windows, Ubuntu và macOS.',
           'gs.pre.h': 'Cần có',
-          'gs.pre.1': 'Node 22.18 trở lên: lane là TypeScript mà Node chạy thẳng, không cần build.',
+          'gs.pre.1': 'Node 22.18 trở lên.',
           'gs.pre.3': '<code>gh</code> đã đăng nhập, để xem trạng thái pull request và CI (không bắt buộc).',
-          'gs.inst.h': 'Cài từ bản clone',
-          'gs.inst': 'Node không chạy file <code>.ts</code> nằm trong <code>node_modules</code>, nên lane không có trên npm.',
+          'gs.inst.h': 'Cài đặt',
+          'gs.inst': 'Từ npm; gõ <code>git lane</code> cũng được.',
           'gs.env.h': 'Cho lane biết mọi thứ nằm ở đâu',
           'gs.env': '<code>LANE_REPOS</code> chứa các bản clone, <code>LANE_ROOT</code> chứa các slot. Cả hai đều bắt buộc.',
           'gs.lim.h': 'Giới hạn',
