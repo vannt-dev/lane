@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.15.0](https://github.com/vannt-dev/lane/compare/v0.14.1...v0.15.0) (2026-11-20)
+
+
+### Features
+
+* publish lane to npm as @vannt-dev/lane ([#51](https://github.com/vannt-dev/lane/issues/51)) ([1d51694](https://github.com/vannt-dev/lane/commit/1d51694282fe9186ec555a1fc82d192c7c9cb0a9))
+* **with:** shared slot budget with cost, a waiting line and lane stats ([#49](https://github.com/vannt-dev/lane/issues/49)) ([bb3fcf7](https://github.com/vannt-dev/lane/commit/bb3fcf74e304c69f0e052de14715e31ee06d11cf))
+
 ## [0.14.1](https://github.com/vannt-dev/lane/compare/v0.14.0...v0.14.1) (2026-11-17)
 
 
