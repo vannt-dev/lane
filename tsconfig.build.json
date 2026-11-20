@@ -1,0 +1,12 @@
+{
+  // The npm package: bin and src as JavaScript in dist (Node does not strip types inside
+  // node_modules). Imports keep their .ts extensions in the source; tsc rewrites them to .js.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": ".",
+    "outDir": "dist"
+  },
+  "include": ["bin", "src"]
+}

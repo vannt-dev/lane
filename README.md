@@ -1,6 +1,8 @@
 # lane
 
 [![CI](https://github.com/vannt-dev/lane/actions/workflows/ci.yml/badge.svg)](https://github.com/vannt-dev/lane/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@vannt-dev/lane)](https://www.npmjs.com/package/@vannt-dev/lane)
+[![npm downloads](https://img.shields.io/npm/d18m/@vannt-dev/lane)](https://www.npmjs.com/package/@vannt-dev/lane)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Website](https://img.shields.io/badge/website-vannt--dev.github.io%2Flane-c6f36b)](https://vannt-dev.github.io/lane/)
 
@@ -42,13 +44,17 @@ keeps its own task, and `/junto:status all` shows every lane's task in one table
 
 ## Install
 
-Node 22.18+, git, and `gh` (logged in) for pull request and CI state. lane is written in
-TypeScript and runs as is (Node strips the types, no build step), so it installs from a clone:
-Node does not run `.ts` files inside `node_modules`, and lane is not published to npm.
+Node 22.18+, git, and `gh` (logged in) for pull request and CI state.
+
+```sh
+npm install -g @vannt-dev/lane    # puts `lane` on PATH, and `git lane` works too
+```
+
+From a clone instead (`npm install` builds `dist`, which the `lane` command runs):
 
 ```sh
 git clone https://github.com/vannt-dev/lane && cd lane
-npm install && npm link    # puts `lane` on PATH
+npm install && npm link
 ```
 
 Then tell lane where your clones are and where the slots go. Both are required; lane stops
@@ -434,7 +440,12 @@ lane new myrepo feat/login --open --agent "aider --yes"   # any command line, as
 ```sh
 npm run typecheck   # tsc --noEmit: strict, no unused code
 npm test            # node --test, runs the .ts tests directly
+npm run build       # dist/: the JavaScript the lane command and the npm package run
 ```
+
+The source runs as is in development (Node strips the types); the package ships `dist`,
+since Node does not strip types inside `node_modules`. A release (release-please) publishes
+to npm from the `publish` job of `.github/workflows/release.yml`, through trusted publishing.
 
 CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24.
 `npm run diagrams` renders the overview diagram from `docs/diagrams/overview.mmd`.
