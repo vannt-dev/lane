@@ -45,7 +45,7 @@ jobs:
       package-manager: npm
       install-command: npm ci
       cache: npm
-      scripts: '["typecheck","test"]'
+      scripts: '["typecheck","test","build"]'
   result:
     name: CI result
     if: always()
