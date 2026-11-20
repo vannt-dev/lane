@@ -14,10 +14,15 @@ const quiet = { say: () => {}, pollMs: 50, tellMs: 60_000 };
 /** A command that writes the lock folder's listing (or another value) into a marker file. */
 const writeCmd = (marker: string, expr: string) =>
   `node -e "require('fs').writeFileSync(process.argv[1], String(${expr}))" "${marker}"`;
-/** A live process for some time: its pid holds locks or queue places in a test. */
-function sleeper(ms: number) {
-  const child = spawn(process.execPath, ['-e', `setTimeout(() => {}, ${ms})`], { stdio: 'ignore' });
-  return child;
+/**
+ * A live process for some time: its pid holds locks or queue places in a test. Started by a
+ * short-lived parent, so it is not this process's child: on Unix a child that ended stays a
+ * zombie (its pid still answers) until this process reaps it, which a blocking wait never does.
+ */
+function sleeper(ms: number): { pid: number } {
+  const start = `const c = require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${ms})'],` +
+    ` { detached: true, stdio: 'ignore' }); c.unref(); console.log(c.pid);`;
+  return { pid: Number(spawnSync(process.execPath, ['-e', start], { encoding: 'utf8' }).stdout.trim()) };
 }
 
 test('a cost of 2 holds two slots while the command runs, and frees both', () => {
@@ -103,9 +108,8 @@ test('a waiter says its place in line, skips a dead head, and runs once the slot
   const locks = new Locks(root);
   const holder = sleeper(1200);
   const head = sleeper(400);
-  await new Promise((r) => setTimeout(r, 100));
   locks.tryTake('build', { lane: 'busy', pid: holder.pid });
-  new Queue(path.join(root, '.locks', 'queue', 'build')).join({ lane: 'early', pid: head.pid!, cost: 1, prio: 'normal', since: 1 });
+  new Queue(path.join(root, '.locks', 'queue', 'build')).join({ lane: 'early', pid: head.pid, cost: 1, prio: 'normal', since: 1 });
   const said: string[] = [];
   const status = locks.withSlot('build', 1, { lane: 'a' }, ['node -e "process.exit(0)"'],
     { say: (m) => said.push(m), pollMs: 50, tellMs: 150 });
@@ -171,7 +175,6 @@ test('lane with from the command line: waits in line (shown by lane locks), runs
   const env: NodeJS.ProcessEnv = { ...process.env, LANE_ROOT: root, LANE_REPOS: root, LANE_WITH_SLOTS: 'build=1' };
   delete env.LANE_WITH;
   const holder = sleeper(1500);
-  await new Promise((r) => setTimeout(r, 100));
   new Locks(root).tryTake('build', { lane: 'busy', pid: holder.pid });
   const waiter = spawn(process.execPath, [bin, 'with', 'build', '--label', 'demo', '--', 'node', '-e', 'process.exit(0)'],
     { env, encoding: 'utf8' } as never);
