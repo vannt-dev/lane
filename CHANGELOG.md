@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/vannt-dev/lane/compare/v0.15.0...v0.16.0) (2026-11-22)
+
+
+### Features
+
+* lane with weighs commands by kind, waits for memory, and lane bump/tune ([#53](https://github.com/vannt-dev/lane/issues/53)) ([8343607](https://github.com/vannt-dev/lane/commit/8343607b02bf42d0aa4b92ed9dc6cb8636c9de3c))
+
 ## [0.15.0](https://github.com/vannt-dev/lane/compare/v0.14.1...v0.15.0) (2026-11-20)
 
 
