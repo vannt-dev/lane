@@ -272,11 +272,14 @@ test('lane bump moves a waiter to the front, and lane locks --json shows it', as
   const bin = path.resolve('bin/lane.ts');
   const env: NodeJS.ProcessEnv = { ...process.env, LANE_ROOT: root, LANE_REPOS: root, LANE_WITH_SLOTS: 'build=1', LANE_WITH_MIN_FREE_GB: '0' };
   delete env.LANE_WITH;
-  const holder = sleeper(1500);
+  const holder = sleeper(8000);
   new Locks(root).tryTake('build', { lane: 'busy', pid: holder.pid });
   const waiter = spawn(process.execPath, [bin, 'with', 'build', '--label', 'slow suite', '--', 'node', '-e', 'process.exit(0)'],
     { env } as never);
-  await new Promise((r) => setTimeout(r, 700));
+  const queueDir = path.join(root, '.locks', 'queue', 'build');
+  for (let i = 0; i < 100 && !(fs.existsSync(queueDir) && fs.readdirSync(queueDir).some((f) => f.endsWith('.json'))); i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
   const bumped = spawnSync(process.execPath, [bin, 'bump', 'slow'], { env, encoding: 'utf8' });
   assert.equal(bumped.status, 0, bumped.stderr);
   const json = JSON.parse(spawnSync(process.execPath, [bin, 'locks', '--json'], { env, encoding: 'utf8' }).stdout);
