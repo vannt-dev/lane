@@ -8,9 +8,10 @@ import { Locks } from '../src/locks.ts';
 import { Queue } from '../src/queue.ts';
 import { commandLabel, readStats, summarize } from '../src/stats.ts';
 import { withSlotsFor } from '../src/config.ts';
+import { buildSlots, depsLockName } from '../src/heavy.ts';
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'lane-with-'));
-const quiet = { say: () => {}, pollMs: 50, tellMs: 60_000 };
+const quiet = { say: () => {}, pollMs: 50, tellMs: 60_000, minFreeBytes: 0 };
 /** A command that writes the lock folder's listing (or another value) into a marker file. */
 const writeCmd = (marker: string, expr: string) =>
   `node -e "require('fs').writeFileSync(process.argv[1], String(${expr}))" "${marker}"`;
@@ -153,11 +154,11 @@ test('summarize: runs, failures, waits and run times per label, within the days 
   ]);
 });
 
-test('LANE_WITH_SLOTS sets the slots of a resource; build has 2 and others 1 without it', () => {
+test('LANE_WITH_SLOTS sets the slots of a resource; build suits the machine and others have 1 without it', () => {
   const old = process.env.LANE_WITH_SLOTS;
   try {
     delete process.env.LANE_WITH_SLOTS;
-    assert.equal(withSlotsFor('build'), 2);
+    assert.equal(withSlotsFor('build'), buildSlots());
     assert.equal(withSlotsFor('gpu'), 1);
     process.env.LANE_WITH_SLOTS = 'build=6, gpu=2, bad=x';
     assert.equal(withSlotsFor('build'), 6);
@@ -188,4 +189,107 @@ test('lane with from the command line: waits in line (shown by lane locks), runs
   assert.match(out, /waiting for build: 1 of 1 slots in use, 1st in line/);
   const stats = spawnSync(process.execPath, [bin, 'stats'], { env, encoding: 'utf8' });
   assert.match(stats.stdout, /build\s+demo\s+1\s+0/);
+});
+
+/** The lock files a command saw while it ran, written to a marker. */
+const listLocks = (root: string, marker: string) =>
+  writeCmd(marker, `require('fs').readdirSync(process.argv[2]).filter(f => f.endsWith('.json')).join(',')`) +
+  ` "${path.join(root, '.locks')}"`;
+
+test('without --cost a command costs what its kind does, never more than the slots', () => {
+  const root = tmp();
+  const marker = path.join(root, 'seen.txt');
+  const locks = new Locks(root);
+  assert.equal(locks.withSlot('build', 3, { lane: 'a' }, [listLocks(root, marker)], { ...quiet, kind: 'tsc' }), 0);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'build-1.json,build-2.json');
+  assert.equal(locks.withSlot('gpu', 1, { lane: 'a' }, [listLocks(root, marker)], { ...quiet, kind: 'tsc' }), 0);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'gpu.json');
+});
+
+test('a lighter command passes a waiter that needs more, unless the pass limit is 0', () => {
+  const root = tmp();
+  const locks = new Locks(root);
+  const holder = sleeper(5000);
+  locks.tryTake('build-1', { lane: 'busy', pid: holder.pid });
+  const queue = new Queue(path.join(root, '.locks', 'queue', 'build'));
+  const head = sleeper(2500);
+  queue.join({ lane: 'big', pid: head.pid, cost: 2, prio: 'normal', since: Date.now() });
+  let start = Date.now();
+  assert.equal(locks.withSlot('build', 2, { lane: 'a' }, ['node -e ""'], { ...quiet, cost: 1, passLimitMs: 60_000 }), 0);
+  assert.ok(Date.now() - start < 1500, 'passed the waiter that needs 2');
+  start = Date.now();
+  assert.equal(locks.withSlot('build', 2, { lane: 'a' }, ['node -e ""'], { ...quiet, cost: 1, passLimitMs: 0 }), 0);
+  assert.ok(Date.now() - start >= 600, 'strict order waited for the head to leave');
+});
+
+test('a waiter that has waited past the pass limit is not passed any more', () => {
+  const root = tmp();
+  const locks = new Locks(root);
+  const holder = sleeper(3000);
+  locks.tryTake('build-1', { lane: 'busy', pid: holder.pid });
+  const head = sleeper(700);
+  new Queue(path.join(root, '.locks', 'queue', 'build'))
+    .join({ lane: 'big', pid: head.pid, cost: 2, prio: 'normal', since: Date.now() - 11 * 60_000 });
+  const said: string[] = [];
+  const start = Date.now();
+  assert.equal(locks.withSlot('build', 2, { lane: 'a' }, ['node -e ""'],
+    { ...quiet, cost: 1, passLimitMs: 10 * 60_000, tellMs: 0, say: (m) => said.push(m) }), 0);
+  assert.ok(Date.now() - start >= 300);
+  assert.match(said[0] ?? '', /2nd in line/);
+});
+
+test('beside a running command it waits for free memory; alone it runs whatever is free', () => {
+  const root = tmp();
+  const locks = new Locks(root);
+  assert.equal(locks.withSlot('build', 2, { lane: 'a' }, ['node -e ""'], { ...quiet, minFreeBytes: 10, freeMemory: () => 0 }), 0);
+  const holder = sleeper(600);
+  locks.tryTake('build-1', { lane: 'busy', pid: holder.pid });
+  const said: string[] = [];
+  const start = Date.now();
+  assert.equal(locks.withSlot('build', 2, { lane: 'a' }, ['node -e ""'],
+    { ...quiet, minFreeBytes: 10, freeMemory: () => (Date.now() - start > 300 ? 100 : 0), tellMs: 0, say: (m) => said.push(m) }), 0);
+  assert.match(said[0] ?? '', /memory: 0\.0 GB free, needs 0\.0 GB/);
+});
+
+test('two test runs on one node_modules never run together', () => {
+  const root = tmp();
+  fs.mkdirSync(path.join(root, 'node_modules'));
+  const locks = new Locks(root);
+  const holder = sleeper(600);
+  const name = depsLockName('vitest', root)!;
+  locks.tryTake(name, { lane: 'other', pid: holder.pid });
+  const said: string[] = [];
+  const start = Date.now();
+  assert.equal(locks.withSlot('build', 4, { lane: 'a' }, ['node -e ""'],
+    { ...quiet, kind: 'vitest', cwd: root, tellMs: 0, say: (m) => said.push(m) }), 0);
+  assert.ok(Date.now() - start >= 300);
+  assert.match(said[0] ?? '', /same node_modules/);
+  assert.deepEqual(locks.list(), []);
+});
+
+test('lane bump moves a waiter to the front, and lane locks --json shows it', async () => {
+  const root = tmp();
+  const bin = path.resolve('bin/lane.ts');
+  const env: NodeJS.ProcessEnv = { ...process.env, LANE_ROOT: root, LANE_REPOS: root, LANE_WITH_SLOTS: 'build=1', LANE_WITH_MIN_FREE_GB: '0' };
+  delete env.LANE_WITH;
+  const holder = sleeper(8000);
+  new Locks(root).tryTake('build', { lane: 'busy', pid: holder.pid });
+  const waiter = spawn(process.execPath, [bin, 'with', 'build', '--label', 'slow suite', '--', 'node', '-e', 'process.exit(0)'],
+    { env } as never);
+  const queueDir = path.join(root, '.locks', 'queue', 'build');
+  for (let i = 0; i < 100 && !(fs.existsSync(queueDir) && fs.readdirSync(queueDir).some((f) => f.endsWith('.json'))); i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  const bumped = spawnSync(process.execPath, [bin, 'bump', 'slow'], { env, encoding: 'utf8' });
+  assert.equal(bumped.status, 0, bumped.stderr);
+  const json = JSON.parse(spawnSync(process.execPath, [bin, 'locks', '--json'], { env, encoding: 'utf8' }).stdout);
+  assert.equal(json.waiting[0].label, 'slow suite');
+  assert.equal(json.waiting[0].prio, 'high');
+  assert.equal(typeof json.memory.availableBytes, 'number');
+  assert.equal(spawnSync(process.execPath, [bin, 'bump', 'nothing-like-this'], { env, encoding: 'utf8' }).status, 1);
+  assert.equal(await new Promise((r) => waiter.on('exit', r)), 0);
+});
+
+test('docker compose up without -d is refused before it waits', () => {
+  assert.throws(() => new Locks(tmp()).withSlot('build', 2, { lane: 'a' }, ['docker compose up'], quiet), /add -d/);
 });

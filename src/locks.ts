@@ -7,6 +7,9 @@ import { isStale, pidAlive, type Holder, type Lock, type LockInfo, type StaleRul
 import { errCode, runArgv, sleepMs } from './proc.ts';
 import { Queue } from './queue.ts';
 import { commandLabel, logRun } from './stats.ts';
+import {
+  availableMemory, costFor, depsLockName, detectKind, gb, minFreeMemory, passLimitMs, prepareArgv, type Kind,
+} from './heavy.ts';
 
 type Say = (msg: string) => void;
 
@@ -139,26 +142,62 @@ export class Locks {
 
   /**
    * Runs a command while holding `cost` of `slots` numbered locks, waiting in line for them
-   * (see Queue), at below-normal CPU priority (LANE_LOW_CPU=0: normal). A command run by
-   * another `lane with` of the same resource (LANE_WITH names it) runs at once: its caller
-   * holds the slots already. Each run is logged for `lane stats`.
+   * (see Queue), at below-normal CPU priority (LANE_LOW_CPU=0: normal). Without --cost the
+   * command costs what its kind does (see heavy.ts). It starts only when, beside a command
+   * already running, enough memory is free (LANE_WITH_MIN_FREE_GB); a test run or build also
+   * takes a lock on its node_modules, so two never share one. A command run by another
+   * `lane with` of the same resource (LANE_WITH names it) runs at once: its caller holds the
+   * slots already. Each run is logged for `lane stats`.
    */
   withSlot(name: string, slots: number, holder: Holder, argv: readonly string[], opts: WithOptions = {}): number {
-    const { cost = 1, prio = 'normal', pollMs = 2000, tellMs = 30_000, say = console.log } = opts;
+    const { prio = 'normal', pollMs = 2000, tellMs = 30_000, say = console.log } = opts;
+    const kind = opts.kind ?? detectKind(argv);
+    const cost = costFor(kind, slots, opts.cost);
     if (cost > slots) throw new Error(`--cost ${cost} is more than the ${slots} slots of ${name}: raise --slots or LANE_WITH_SLOTS`);
-    if (heldByCaller(name)) return runArgv(argv, opts.cwd);
+    const command = prepareArgv(argv);
+    if (heldByCaller(name)) return runArgv(command, opts.cwd);
     const me = { ...holder, pid: process.pid };
+    const label = opts.label ?? commandLabel(argv);
+    const deps = depsLockName(kind, opts.cwd ?? process.cwd());
+    const minFree = opts.minFreeBytes ?? minFreeMemory();
+    const passMs = opts.passLimitMs ?? passLimitMs();
+    const freeMemory = opts.freeMemory ?? availableMemory;
     const queue = new Queue(path.join(this.dir, 'queue', name));
     const start = Date.now();
-    const id = queue.join({ lane: holder.lane, pid: process.pid, cost, prio, since: start });
+    const id = queue.join({ lane: holder.lane, pid: process.pid, cost, prio, since: start, label });
     let place = 0;
+    let why = '';
     let got: string[];
     try {
       got = this.waitFor(() => {
-        place = queue.line().findIndex((w) => w.id === id);
-        return place === 0 ? this.takeSlots(name, slots, cost, me) : null;
+        const line = queue.line();
+        place = Math.max(0, line.findIndex((w) => w.id === id));
+        // a later waiter passes the ones ahead only while it fits now and none of them has waited too long
+        const now = Date.now();
+        if (place > 0 && (passMs === 0 || line.slice(0, place).some((w) => now - w.since >= passMs))) {
+          why = 'line';
+          return null;
+        }
+        if (minFree > 0 && this.inUse(name, slots) > 0) {
+          const free = freeMemory();
+          if (free < minFree) {
+            why = `memory: ${gb(free)} free, needs ${gb(minFree)}`;
+            return null;
+          }
+        }
+        const taken = this.takeSlots(name, slots, cost, me);
+        if (!taken) {
+          why = 'line';
+          return null;
+        }
+        if (deps && this.tryTake(deps, me)) {
+          for (const n of taken) fs.rmSync(this.file(n), { force: true });
+          why = 'another test run or build uses the same node_modules';
+          return null;
+        }
+        return deps ? [...taken, deps] : taken;
       }, () => `waiting for ${name}: ${this.inUse(name, slots)} of ${slots} slots in use, ${ordinal(place + 1)} in line` +
-        `${cost > 1 ? ` (needs ${cost})` : ''}...`, pollMs, say, tellMs);
+        `${cost > 1 ? ` (needs ${cost})` : ''}${why && why !== 'line' ? `; ${why}` : ''}...`, pollMs, say, tellMs);
     } finally {
       queue.leave(id);
     }
@@ -166,12 +205,12 @@ export class Locks {
     let status = 1;
     try {
       const env = { ...process.env, LANE_WITH: [process.env.LANE_WITH, `${name}:${process.pid}`].filter(Boolean).join(',') };
-      status = lowCpu(() => runArgv(argv, opts.cwd, env));
+      status = lowCpu(() => runArgv(command, opts.cwd, env));
       return status;
     } finally {
       for (const n of got) fs.rmSync(this.file(n), { force: true });
       logRun(path.dirname(this.dir), {
-        at: start, res: name, label: opts.label ?? commandLabel(argv), cost, waitMs: ran - start, runMs: Date.now() - ran, status,
+        at: start, res: name, label, cost, waitMs: ran - start, runMs: Date.now() - ran, status,
       });
     }
   }
@@ -180,8 +219,16 @@ export class Locks {
 export interface WithOptions {
   say?: Say;
   cwd?: string;
-  /** Slots the command needs (a heavy test run 2, a lint 1). */
+  /** Slots the command needs (a heavy test run 2, a lint 1); else its kind's cost. */
   cost?: number;
+  /** The kind of command; else found from the command itself. */
+  kind?: Kind;
+  /** Memory that must be free to start beside a running command (default: minFreeMemory). */
+  minFreeBytes?: number;
+  /** How long a waiter may be passed by later ones (default: passLimitMs; 0: never). */
+  passLimitMs?: number;
+  /** Reads the free memory (tests give their own). */
+  freeMemory?: () => number;
   prio?: 'high' | 'normal';
   /** The name in `lane stats`; else the tool and its subcommand. */
   label?: string;

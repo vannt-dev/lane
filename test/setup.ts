@@ -6,3 +6,10 @@ const clean = gitEnv();
 for (const key of Object.keys(process.env)) {
   if (!(key in clean)) delete process.env[key];
 }
+// The suite may itself run inside `lane with` (LANE_WITH would make every withSlot run at once,
+// holding nothing) or on a machine short of memory (the free-memory gate would hold a test that
+// keeps a slot busy). Tests of those rules pass their own values.
+for (const key of Object.keys(process.env)) {
+  if (/^LANE_(WITH|VITEST_WORKERS)/.test(key)) delete process.env[key];
+}
+process.env.LANE_WITH_MIN_FREE_GB = '0';

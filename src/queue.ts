@@ -1,6 +1,7 @@
 // The line of commands waiting for a `lane with` resource: one file per waiter under
-// <lane root>/.locks/queue/<resource>. Only the head of the line may take slots, so a command
-// that needs two slots is not passed over forever by commands that need one.
+// <lane root>/.locks/queue/<resource>. The head of the line takes slots first; a later waiter
+// may pass it only while it fits at once and nobody ahead has waited past the pass limit, so a
+// command that needs two slots is never passed over for long by commands that need one.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,6 +14,8 @@ export interface Waiter {
   /** `high` waits ahead of every `normal` waiter, never ahead of a command already running. */
   prio: 'high' | 'normal';
   since: number;
+  /** A short name of the command (never its arguments), for `lane locks` and `lane bump`. */
+  label?: string;
 }
 
 export class Queue {
@@ -32,6 +35,13 @@ export class Queue {
     fs.writeFileSync(tmp, JSON.stringify(w));
     fs.renameSync(tmp, path.join(this.dir, `${id}.json`));
     return id;
+  }
+
+  /** Rewrites a waiter (e.g. `lane bump` raising its priority), whole like join. */
+  update(id: string, w: Waiter): void {
+    const tmp = path.join(this.dir, `${id}.tmp`);
+    fs.writeFileSync(tmp, JSON.stringify(w));
+    fs.renameSync(tmp, path.join(this.dir, `${id}.json`));
   }
 
   leave(id: string): void {
