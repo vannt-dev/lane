@@ -26,9 +26,10 @@ const command = String(event?.tool_input?.command ?? '');
 const cwd = path.resolve(String(event?.cwd ?? process.cwd()));
 const root = process.env.LANE_ROOT ? path.resolve(process.env.LANE_ROOT) : '';
 const inLane = root !== '' && cwd.toLowerCase().startsWith(root.toLowerCase() + path.sep);
-if (!inLane || /\blane with\b/.test(command) || !HEAVY.some((re) => re.test(command))) process.exit(0);
+// A command already put in line (by lane with, or by the calmrun tool) goes through.
+if (!inLane || /\b(lane with|calmrun)\b/.test(command) || !HEAVY.some((re) => re.test(command))) process.exit(0);
 process.stderr.write(
   'This is a heavy command: run it through the shared build slots, e.g.\n' +
-  `  lane with build --cost 2 -- ${command}\n` +
-  '(--cost 1 for a light one; run it in the background if the wait may be long)\n');
+  `  lane with build -- ${command}\n` +
+  '(its kind sets the cost; run it in the background if the wait may be long)\n');
 process.exit(2);

@@ -94,8 +94,11 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_POOLS` | Max slots of named pools, e.g. `review=2,ci=1` (see Pools) |
 | `LANE_ROOT_SPARE` | A second folder for new slots, on another drive, used when the lane root's drive is short of space (see A spare root) |
 | `LANE_MIN_FREE_GB` | Free space a drive must have for a new slot, in GB. Not set: 10 with `LANE_ROOT_SPARE`, else no check |
-| `LANE_WITH_SLOTS` | Slots of `lane with` resources, e.g. `build=6,gpu=1` (default: build 2, others 1; see Heavy commands) |
+| `LANE_WITH_SLOTS` | Slots of `lane with` resources, e.g. `build=6,gpu=1` (default: build suits the machine, see `lane tune`; others 1) |
 | `LANE_LOW_CPU` | `0`: commands run by `lane with` keep normal CPU priority (default: below normal) |
+| `LANE_WITH_MIN_FREE_GB` | Free memory a `lane with` command needs to start beside a running one (default: an eighth of the RAM, at least 3; `0`: off) |
+| `LANE_WITH_PASS_MIN` | Minutes a waiting command may be passed by later, lighter ones (default 10; `0`: strict order) |
+| `LANE_VITEST_WORKERS` | `--maxWorkers` given to vitest started by `lane with` (default: 1 up to 4 cores, 2 up to 11, then 3) |
 
 ## Commands
 
@@ -114,9 +117,11 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
 | `lane brief [<lane>]` | The rules for an agent working in a lane, to paste at the top of its task: an agent started by another session does not read `CLAUDE.local.md`. |
 | `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. |
-| `lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <cmd>` | Runs a command holding K (default 1) of the resource's N slots (`LANE_WITH_SLOTS`, else `build` 2 and others 1), waiting in line for them, at below-normal CPU priority. See Heavy commands. |
-| `lane locks` | Who holds what, and who waits in line. |
+| `lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <cmd>` | Runs a command holding K of the resource's N slots (K: `--cost`, else by the kind of command; N: `LANE_WITH_SLOTS`, else `build` suits the machine and others 1), waiting in line for them and for free memory, at below-normal CPU priority. See Heavy commands. |
+| `lane locks [--json]` | Who holds what, and who waits in line (with each command's label); `--json` adds free memory, for other tools. |
+| `lane bump <text>` | Moves the waiting commands whose label or lane holds the text to the front of their line. |
 | `lane stats [--days N]` | How long `lane with` commands waited and ran over the last N days (default 7), per command: to size `LANE_WITH_SLOTS` for the machine. |
+| `lane tune` | The build slots, test workers and free memory that suit this machine, and the commands to set them. |
 
 **Checks** (`verify`, `sync`, `brief`): `--cmd` (repeatable), else an untracked `.lanecheck`
 in the main clone (one command per line), else what the checkout has: the `typecheck`,
@@ -140,17 +145,34 @@ machine stalls: tests time out for no fault of the code. `lane with` gives a res
 of slots shared by every lane, and a command takes as many as it weighs:
 
 ```sh
+lane tune                                                  # what suits this machine, and how to set it
 setx LANE_WITH_SLOTS "build=6"                             # this machine: 6 slots of build
-lane with build --cost 2 -- npx vitest run                 # a whole test suite: 2 slots
+lane with build -- npx vitest run                          # a whole test suite: 2 slots (its kind)
 lane with build -- npx eslint src/changed.ts               # a light command: 1 slot
 lane with build --cost 2 --prio high -- npm run build      # waits ahead of the normal ones
 ```
 
+- **Cost by kind.** Without `--cost`, a test run (vitest, jest), a type check (tsc, vue-tsc),
+  a build (vite/next/ng build, webpack, gradle, cargo build, ...), a browser (Playwright,
+  Cypress) and docker take 2 slots; a lint, pytest and anything else 1. Never more than the
+  resource has, so a one-slot resource still runs them.
 - **In line.** A command that finds too few free slots waits in line and says its place every
   30 seconds (`waiting for build: 6 of 6 slots in use, 2nd in line`); `lane locks` lists the
-  line. Only the head of the line takes slots, so a command that needs 2 is not passed over
-  forever by commands that need 1. `--prio high` waits ahead of every normal waiter but never
-  stops a command that is running. A waiter whose process ended leaves the line.
+  line and `lane bump <text>` moves a waiting command to the front. A later command may pass
+  the ones ahead only when it fits at once and none of them has waited 10 minutes
+  (`LANE_WITH_PASS_MIN`; `0`: strict order), so a command that needs 2 is never passed over
+  for long by commands that need 1. `--prio high` waits ahead of every normal waiter but never
+  stops a command that is running. A waiter whose process ended leaves the line; `lane locks`
+  warns about one waiting over 30 minutes.
+- **Free memory.** Beside a command already running, another starts only when the machine
+  has `LANE_WITH_MIN_FREE_GB` free (default an eighth of the RAM, at least 3 GB), and says
+  `waiting for memory` until then. Alone, a command always starts.
+- **One per node_modules.** Two test runs or builds never use the same `node_modules` at once
+  (a lock named after its real path), so lanes that share one through links do not collide.
+- **Kind rules.** vitest started directly (`npx vitest ...` as separate words) gets
+  `--maxWorkers` (`LANE_VITEST_WORKERS`) unless it sets its own; a command line given as one
+  string and package scripts are left as typed. `docker compose up` without `-d` is refused:
+  it would hold its slots until stopped.
 - **All or nothing.** A command takes all its slots at once or none; a cost above the slots
   fails at once.
 - **Low CPU priority.** The command runs below normal priority (Windows priority class, Unix
@@ -162,7 +184,7 @@ lane with build --cost 2 --prio high -- npm run build      # waits ahead of the 
   short label (the tool and its subcommand, or `--label`; never the arguments), the cost, the
   wait, the run time and the exit code. `lane stats --days 3` sums them up per command: long
   waits mean too few slots, a busy machine with short waits means too many.
-- `lane verify` and `lane sync` run each check with one build slot.
+- `lane verify` and `lane sync` run each check through `lane with build`, at the cost of its kind.
 
 A sample Claude Code hook, [`examples/heavy-commands-hook.mjs`](examples/heavy-commands-hook.mjs),
 refuses a heavy command (vitest, jest, tsc, pytest, test and build tools) run inside a lane

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdBrief, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdMove, cmdNew, cmdPort, cmdRelease, cmdRemove,
-  BISECT_MAX, cmdStats, cmdSync, cmdVerify, cmdWith, config, withSlotsFor,
+  cmdBrief, cmdBump, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdMove, cmdNew, cmdPort, cmdRelease, cmdRemove,
+  BISECT_MAX, cmdStats, cmdSync, cmdTune, cmdVerify, cmdWith, config, withSlotsFor,
 } from '../src/index.ts';
 
 const HELP = `lane: one git worktree per task, so tasks in one repo run side by side
@@ -64,13 +64,20 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator); ends with this lane's hold
   lane release <res>            Give it back
   lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <command>
-                                Run a command holding K (default 1) of the resource's N slots
-                                (build has 2, others 1; LANE_WITH_SLOTS="build=6" sets them),
-                                waiting in line (--prio high: ahead of normal waiters), at
-                                below-normal CPU priority (LANE_LOW_CPU=0: normal). A nested
-                                lane with of the same resource runs at once.
-  lane locks                    Who holds what, and who waits in line
+                                Run a command holding K of the resource's N slots, waiting in
+                                line (--prio high: ahead of normal waiters), at below-normal CPU
+                                priority (LANE_LOW_CPU=0: normal). K: --cost, else 2 for test
+                                runs, tsc, builds, browsers and docker, 1 for the rest. N: build
+                                suits the machine (see lane tune), others 1; LANE_WITH_SLOTS=
+                                "build=6" sets them. Beside a running command it also waits for
+                                LANE_WITH_MIN_FREE_GB of free memory; a later, lighter command
+                                may pass for LANE_WITH_PASS_MIN (10) minutes; one test run or
+                                build per node_modules; vitest gets --maxWorkers; docker compose
+                                up needs -d. A nested lane with of the same resource runs at once.
+  lane locks [--json]           Who holds what, and who waits in line
+  lane bump <text>              Move waiting commands whose label or lane holds text to the front
   lane stats [--days N]         Waiting and running times of lane with commands (default 7 days)
+  lane tune                     Slots, test workers and free memory that suit this machine
 
   Checks: --cmd, else a .lanecheck file in the main clone (one command per line), else the
   package.json scripts typecheck/lint/test, flutter analyze/test, cargo test or go test.
@@ -164,7 +171,9 @@ function main(): number {
     cmdPort(whole(a, 'the port', 1, 65535), b === undefined ? 0 : whole(b, 'the port offset', 0, config.portStride - 1));
   } else if (cmd === 'claim' && one) cmdClaim(a, { noWait: values['no-wait'] });
   else if (cmd === 'release' && one) cmdRelease(a);
-  else if (cmd === 'locks') cmdLocks();
+  else if (cmd === 'locks' && a === undefined) cmdLocks({ json: values.json });
+  else if (cmd === 'bump' && one) return cmdBump(a) > 0 ? 0 : 1;
+  else if (cmd === 'tune' && a === undefined) cmdTune();
   else if (cmd === 'with' && one && tail.length > 0) {
     if (values.prio !== undefined && values.prio !== 'high' && values.prio !== 'normal') throw new Error('--prio takes high or normal');
     return cmdWith(a, tail, values.slots === undefined ? withSlotsFor(a) : whole(values.slots, '--slots', 1, 64), {
