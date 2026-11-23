@@ -197,7 +197,7 @@ without `lane with`, and answers with the command to use. The file says how to a
 ## Sharing one queue with calmrun
 
 [calmrun](https://github.com/vannt-dev/calmrun) is a machine-wide queue for heavy commands
-with the same rules (points by kind, free memory, one run per `node_modules`). Side by side,
+with rules like lane's (points by kind, free memory, one run per `node_modules`). Side by side,
 two queues would not see each other: lane's commands and calmrun's would run at once, about
 twice the load meant, and `lane claim emulator` would not stop an Android device test that
 calmrun starts. So when calmrun is installed, lane hands its work to it:
@@ -205,16 +205,20 @@ calmrun starts. So when calmrun is installed, lane hands its work to it:
 - **When.** calmrun 0.2.0 or newer is on `PATH` (looked up once per lane command, never in the
   current folder) and `LANE_CALMRUN` is not `0`. Otherwise lane keeps its own line, as above.
 - **`lane with build -- <cmd>`** runs `calmrun --label <lane>:<kind> -- <cmd>`, the command as
-  typed. calmrun weighs it by its kind (the same costs as lane's), gives vitest, gradle and
-  cargo their workers, waits for free memory and disk, and runs it at low priority. lane adds
-  `--cost`, `--prio high`, `--wait-timeout` and `--ticket` only when given; `--label L` makes
-  the label `<lane>:L`. calmrun's budget and config apply (`calmrun doctor`), not
+  typed (the kind as lane sees it, else the tool's name: `myrepo-1:vitest`, `myrepo-1:node`).
+  calmrun's own detection weighs it (it knows more tools and package scripts than lane, and
+  may differ: gradle `test*`/`check*` tasks cost 1 there, 2 in lane), gives vitest, gradle
+  and cargo their workers, waits for free memory and disk, and runs it at low priority. lane
+  adds `--cost`, `--prio high`, `--wait-timeout` and `--ticket` only when given; `--label L`
+  makes the label `<lane>:L`. calmrun's budget and config apply (`calmrun doctor`), not
   `LANE_WITH_SLOTS`, `--slots`, `LANE_VITEST_WORKERS`, `LANE_WITH_MIN_FREE_GB`,
   `LANE_WITH_PASS_MIN` or `LANE_LOW_CPU`.
 - **Other resources** (`lane with emulator -- <cmd>`): lane takes its own lock on the resource
   first (its slots and `--cost` count there, and a `lane claim` keeps it apart), then runs
   `calmrun --needs emulator ... -- <cmd>`, so calmrun jobs that need it (calmrun gives
-  `gradle connected*` the emulator by itself) wait too. calmrun's points come from the kind.
+  `gradle connected*` the emulator by itself) wait too. calmrun's points come from its own
+  detection. A resource with more than one slot in `LANE_WITH_SLOTS` needs the same count in
+  calmrun (`CALMRUN_RESOURCES="gpu=2"`); calmrun gives one slot to a resource it does not know.
 - **Exit codes** pass through: the command's own, or calmrun's (`2` a refused endless command,
   `137` stopped for memory, `130` Ctrl+C, `75` when `--wait-timeout` ran out: calmrun keeps
   the place for 10 minutes, and the same `lane with` again with `--ticket <id>` takes it back).

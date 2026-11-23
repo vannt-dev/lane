@@ -116,11 +116,15 @@ export class Locks {
     return true;
   }
 
-  /** Notes the calmrun lease taken with a claim, so the claim's end gives it back. */
-  setCalmrunLease(name: string, lease: string): void {
+  /**
+   * Makes a claim taken under this process's pid (while calmrun's hold waited) a claim of the
+   * lane again, with the calmrun lease taken for it, so the claim's end gives that back.
+   */
+  settleClaim(name: string, calmrunLease?: string): void {
     const cur = this.read(name);
     if (!cur) throw new Error(`${name} is not held`);
-    fs.writeFileSync(this.file(name), JSON.stringify({ ...cur, calmrunLease: lease }));
+    const { pid: _pid, ...claim } = cur;
+    fs.writeFileSync(this.file(name), JSON.stringify(calmrunLease ? { ...claim, calmrunLease } : claim));
   }
 
   /** The claims (locks held across commands, not by a process) of the lane in `lanePath`. */

@@ -30,6 +30,9 @@ if (argv[0] === 'hold' && argv[1] === '--help') {
   console.error('calmrun: cannot run hold: command not found: hold'); process.exit(127);
 }
 if (argv[0] === 'hold') {
+  // what the claim's lock looks like while the hold waits
+  const lock = process.env.FAKE_CALMRUN_LOCK;
+  if (lock) fs.writeFileSync(process.env.FAKE_CALMRUN_LOG + '.lock', fs.readFileSync(lock, 'utf8'));
   const code = Number(process.env.FAKE_CALMRUN_HOLD_EXIT || 0);
   if (code) process.exit(code);
   console.log('lease-' + process.pid); process.exit(0);
@@ -94,10 +97,12 @@ test('lane with build hands the command to calmrun with its label, cost, priorit
   const marker = path.join(root, 'held.txt');
   const cmd = nodeCmd("require('fs').writeFileSync(process.argv[1], process.env.CALMRUN_HELD || '')", marker);
   const { result, calls } = withFake(fakes.new, () => new Locks(root).withSlot('build', 4, { lane: 'r-1' }, cmd, {
-    ...quiet, cost: 3, prio: 'high', label: 'unit', waitTimeoutS: 30,
+    ...quiet, cost: 3, prio: 'high', label: 'unit', waitTimeoutS: 30, ticket: 17,
   }));
   assert.equal(result, 0);
-  assert.deepEqual(jobs(calls), [['--label', 'r-1:unit', '--cost', '3', '--prio', 'high', '--wait-timeout', '30', '--', ...cmd]]);
+  assert.deepEqual(jobs(calls), [[
+    '--ticket', '17', '--label', 'r-1:unit', '--cost', '3', '--prio', 'high', '--wait-timeout', '30', '--', ...cmd,
+  ]]);
   assert.match(fs.readFileSync(marker, 'utf8'), /^\d+$/, 'the command ran inside calmrun');
   assert.deepEqual(new Locks(root).list(), [], 'no lane slots taken');
   assert.deepEqual(readStats(root), [], 'the run is in calmrun stats, not lane stats');
@@ -237,5 +242,21 @@ test('claim --no-wait fails, and frees the lane lock, when a calmrun job holds t
       { FAKE_CALMRUN_HOLD_EXIT: '75' });
     assert.deepEqual(calls.find((c) => c[0] === 'hold' && c[1] !== '--help')?.slice(-2), ['--wait-timeout', '1']);
     assert.equal(claimLock('emulator'), null);
+  });
+});
+
+test('while calmrun hold waits the claim lives with the lane process; a failed hold leaves a lane-only claim', () => {
+  inLane('cr5', () => {
+    const log = path.join(tmp(), 'calls.jsonl');
+    const lockFile = path.join(lane.config.root, '.locks', 'emulator.json');
+    const { result } = withFake(fakes.new, () => capture(() => cmdClaim('emulator', { noWait: false })).out,
+      { FAKE_CALMRUN_LOG: log, FAKE_CALMRUN_LOCK: lockFile, FAKE_CALMRUN_HOLD_EXIT: '3' });
+    const during = JSON.parse(fs.readFileSync(`${log}.lock`, 'utf8')) as { pid?: number };
+    assert.equal(during.pid, process.pid, 'a lane killed during the hold leaves a stale claim, not a stuck one');
+    assert.match(result, /calmrun hold emulator failed \(exit 3\)/);
+    const after = claimLock('emulator');
+    assert.equal(after?.pid, undefined, 'the claim outlives the command again');
+    assert.equal(after?.calmrunLease, undefined);
+    withFake(fakes.new, () => capture(() => cmdRelease('emulator')));
   });
 });

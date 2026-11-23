@@ -142,7 +142,7 @@ export function runJob(c: Calmrun, job: Job, argv: readonly string[], cwd?: stri
     console.error(`lane: could not start calmrun (${c.file}): ${r.error.message}`);
     return 1;
   }
-  if (r.status === EXIT_WAIT_TIMEOUT) {
+  if (r.status === EXIT_WAIT_TIMEOUT && job.waitTimeoutS !== undefined) {
     console.error('lane: calmrun keeps your place for 10 minutes: run the same lane with again, adding ' +
       '--ticket <id> (the id calmrun printed above)');
   }

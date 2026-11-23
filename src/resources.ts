@@ -21,36 +21,31 @@ function here(): Holder & { lanePath: string } {
   return { lane: path.basename(top), lanePath: path.resolve(top), lease: currentLease(top) };
 }
 
+/**
+ * Claims a resource. With calmrun installed, the claim also takes a calmrun lease on it (as
+ * long as a claim lasts), so calmrun jobs that need it (an Android device test needs the
+ * emulator) wait too; a calmrun without `hold` gets a note instead.
+ */
 export function cmdClaim(resource: string, opts: { noWait: boolean }): void {
   const me = here();
-  locks().take(resource, me, { wait: !opts.noWait });
-  const also = holdInCalmrun(resource, me, opts.noWait);
-  log(`${resource} is yours (${me.lane})${also}. Free it with: lane release ${resource}`);
-}
-
-/**
- * With calmrun installed, a claim also takes a calmrun lease on the resource (as long as a
- * claim lasts), so calmrun jobs that need it (an Android device test needs the emulator) wait
- * too. A calmrun without `hold` gets a note instead. Returns what to add to the message.
- */
-function holdInCalmrun(resource: string, me: Holder, noWait: boolean): string {
   const c = calmrun();
-  if (!c) return '';
-  if (!canHold(c)) {
-    log(`lane: calmrun ${versionText(c)} has no hold (0.3.0 or newer has): calmrun jobs will not wait for this claim`);
-    return '';
+  const holder = c && canHold(c) ? c : null;
+  // while calmrun's hold may wait, the claim lives only as long as this process: a lane killed
+  // then (Ctrl+C, an agent's time limit) leaves no claim behind
+  locks().take(resource, holder ? { ...me, pid: process.pid } : me, { wait: !opts.noWait });
+  if (c && !holder) log(`lane: calmrun ${versionText(c)} has no hold (0.3.0 or newer has): calmrun jobs will not wait for this claim`);
+  let also = '';
+  if (holder) {
+    const { lease, code } = holdLease(holder, resource, `${me.lane}:claim`, opts.noWait ? 1 : undefined);
+    if (code === EXIT_WAIT_TIMEOUT) {
+      locks().release(resource, me.lane);
+      throw new Error(`${resource} is in use by a calmrun job (see calmrun status)`);
+    }
+    if (!lease) log(`lane: calmrun hold ${resource} failed (exit ${code}): calmrun jobs will not wait for this claim`);
+    locks().settleClaim(resource, lease);
+    if (lease) also = `, in calmrun too (lease ${lease})`;
   }
-  const { lease, code } = holdLease(c, resource, `${me.lane}:claim`, noWait ? 1 : undefined);
-  if (lease) {
-    locks().setCalmrunLease(resource, lease);
-    return `, in calmrun too (lease ${lease})`;
-  }
-  if (code === EXIT_WAIT_TIMEOUT) {
-    locks().release(resource, me.lane);
-    throw new Error(`${resource} is in use by a calmrun job (see calmrun status)`);
-  }
-  log(`lane: calmrun hold ${resource} failed (exit ${code}): calmrun jobs will not wait for this claim`);
-  return '';
+  log(`${resource} is yours (${me.lane})${also}. Free it with: lane release ${resource}`);
 }
 
 /** A line saying calmrun runs `lane with` commands, or '' when lane's own line does. */
