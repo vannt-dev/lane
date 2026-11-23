@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.0](https://github.com/vannt-dev/lane/compare/v0.16.0...v0.17.0) (2026-11-23)
+
+
+### Features
+
+* **with:** share one machine-wide queue with calmrun ([#55](https://github.com/vannt-dev/lane/issues/55)) ([d9a8bab](https://github.com/vannt-dev/lane/commit/d9a8babcaf6152a69831f9af098007e115ae7a78))
+
 ## [0.16.0](https://github.com/vannt-dev/lane/compare/v0.15.0...v0.16.0) (2026-11-22)
 
 
