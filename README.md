@@ -117,7 +117,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. A lane that does not merge is listed with the lane it conflicts with and the files. When the checks fail it looks for the lanes to blame, see Which lanes break each other (`--no-bisect` skips that). Kept and held when it fails, to look at. |
 | `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
 | `lane brief [<lane>]` | The rules for an agent working in a lane, to paste at the top of its task: an agent started by another session does not read `CLAUDE.local.md`. |
-| `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. With calmrun 0.3.0 or newer it also holds the resource in calmrun. |
+| `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. With calmrun 0.3.0 or newer it also holds the resource in calmrun; the lane that claimed it uses it without waiting, and claiming again renews it. |
 | `lane with <res> [--slots N] [--cost K] [--prio high] [--label L] [--wait-timeout S] [--ticket ID] -- <cmd>` | Runs a command holding K of the resource's N slots (K: `--cost`, else by the kind of command; N: `LANE_WITH_SLOTS`, else `build` suits the machine and others 1), waiting in line for them and for free memory, at below-normal CPU priority. `--wait-timeout S` gives up after S seconds with exit 75. With calmrun installed, calmrun runs it. See Heavy commands. |
 | `lane locks [--json]` | Who holds what, and who waits in line (with each command's label); `--json` adds free memory, for other tools. |
 | `lane bump <text>` | Moves the waiting commands whose label or lane holds the text to the front of their line. |
@@ -225,16 +225,20 @@ calmrun starts. So when calmrun is installed, lane hands its work to it:
   Ctrl+C reaches calmrun and the command.
 - **Nested.** Inside a calmrun job (calmrun sets `CALMRUN_HELD`), `lane with build` runs at once:
   the job holds the points already. Another resource still takes lane's lock.
-- **Claims.** With calmrun 0.3.0 or newer (`calmrun hold`), `lane claim emulator` also takes a
-  calmrun lease on it, labelled `<lane>:claim`, for 3 hours (as long as a claim lasts), so
-  calmrun jobs that need the emulator wait. The lease is given back with the claim:
-  `lane release`, `lane done`, `lane free`, `lane rm`, or a stale claim taken over.
-  `--no-wait` gives up after a second when a calmrun job uses it. An older calmrun gets a
-  one-line note, and the claim stays lane's only.
-- **Your own lease.** While a lane holds such a lease, its own `lane with` commands use lane's
-  line, not calmrun: calmrun would hold them behind that lease (a device test needs the
-  emulator the lane holds). A command started with plain `calmrun` from that lane waits for
-  the lease too: run device tests through `lane with`, or release first.
+- **Claims.** With a calmrun that has `calmrun hold` (0.3.0 or newer; a build between releases
+  is recognised by its `hold --help`), `lane claim emulator` also runs
+  `calmrun hold emulator --for <lane folder> --ttl 10800 --label <lane>:claim`: a lease for 3
+  hours (as long as a claim lasts), so calmrun jobs from elsewhere that need the emulator wait.
+  The lease is given back with the claim: `lane release`, `lane done`, `lane free`, `lane rm`,
+  or a stale claim taken over. `--no-wait` tries once (`--wait-timeout 0`) and fails when a
+  calmrun job uses the emulator. Claiming again from the same lane starts the claim's 3 hours
+  again and renews the lease (`calmrun hold --renew`), or takes a new one when calmrun no
+  longer has it. An older calmrun gets a one-line note, and the claim stays lane's only.
+- **Your own claim.** The lane that claimed the emulator uses it without waiting:
+  `lane with emulator -- <cmd>` from that lane skips lane's lock it holds already, and calmrun
+  lets every job run inside the lane's folder use the lease (`--for`), whether started by
+  `lane with` (which also passes `CALMRUN_LEASE`) or by plain `calmrun`, such as a
+  `gradle connected*` test that takes the emulator by itself. Other lanes wait for it.
 - `lane locks`, `lane stats`, `lane tune` and `lane bump` say when calmrun is in charge;
   `calmrun status` and `calmrun stats` show its jobs, and `lane locks --json` has `calmrun`
   (its version, or null).

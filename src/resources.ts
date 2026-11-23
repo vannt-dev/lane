@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { calmrun, canHold, EXIT_WAIT_TIMEOUT, holdLease, versionText } from './calmrun.ts';
+import { calmrun, canHold, EXIT_WAIT_TIMEOUT, holdLease, renewLease, versionText, type Calmrun } from './calmrun.ts';
 import { locks } from './checks.ts';
 import { config } from './config.ts';
 import { Queue } from './queue.ts';
@@ -30,22 +30,44 @@ export function cmdClaim(resource: string, opts: { noWait: boolean }): void {
   const me = here();
   const c = calmrun();
   const holder = c && canHold(c) ? c : null;
+  if (c && !holder) log(`lane: calmrun ${versionText(c)} has no hold (0.3.0 or newer has): calmrun jobs will not wait for this claim`);
+  const mine = locks().claimsOf(me.lanePath).find((l) => l.name === resource && !l.stale);
+  if (mine) return reclaim(resource, me, mine.calmrunLease, holder, opts.noWait);
   // while calmrun's hold may wait, the claim lives only as long as this process: a lane killed
   // then (Ctrl+C, an agent's time limit) leaves no claim behind
   locks().take(resource, holder ? { ...me, pid: process.pid } : me, { wait: !opts.noWait });
-  if (c && !holder) log(`lane: calmrun ${versionText(c)} has no hold (0.3.0 or newer has): calmrun jobs will not wait for this claim`);
-  let also = '';
-  if (holder) {
-    const { lease, code } = holdLease(holder, resource, `${me.lane}:claim`, opts.noWait ? 1 : undefined);
-    if (code === EXIT_WAIT_TIMEOUT) {
-      locks().release(resource, me.lane);
-      throw new Error(`${resource} is in use by a calmrun job (see calmrun status)`);
-    }
-    if (!lease) log(`lane: calmrun hold ${resource} failed (exit ${code}): calmrun jobs will not wait for this claim`);
-    locks().settleClaim(resource, lease);
-    if (lease) also = `, in calmrun too (lease ${lease})`;
+  const lease = holder ? holdFor(holder, resource, me, opts.noWait) : undefined;
+  if (holder) locks().settleClaim(resource, lease);
+  log(`${resource} is yours (${me.lane})${lease ? `, in calmrun too (lease ${lease})` : ''}. Free it with: lane release ${resource}`);
+}
+
+/**
+ * A claim the lane holds already, claimed again (an agent that lost track, a long session):
+ * its lifetime starts again, and so does its calmrun lease (`hold --renew`); a lease calmrun no
+ * longer has, or none at all, is taken anew.
+ */
+function reclaim(resource: string, me: Holder & { lanePath: string }, lease: string | undefined, holder: Calmrun | null,
+  noWait: boolean): void {
+  let now = lease;
+  if (holder && !(lease && renewLease(holder, lease))) now = holdFor(holder, resource, me, noWait, false);
+  locks().settleClaim(resource, now);
+  log(`${resource} is yours already (${me.lane}); claim${now ? ` and calmrun lease ${now}` : ''} renewed for 3 hours. ` +
+    `Free it with: lane release ${resource}`);
+}
+
+/**
+ * Takes the calmrun lease for a claim, owned by the lane's folder: other calmrun jobs that need
+ * the resource wait, the lane's own (run inside its folder) use it. A calmrun job holding it
+ * now: with --no-wait (one try) the claim fails and, when it is new, is given back.
+ */
+function holdFor(c: Calmrun, resource: string, me: Holder & { lanePath: string }, noWait: boolean, fresh = true): string | undefined {
+  const { lease, code } = holdLease(c, resource, me.lanePath, `${me.lane}:claim`, noWait ? 0 : undefined);
+  if (code === EXIT_WAIT_TIMEOUT) {
+    if (fresh) locks().release(resource, me.lane);
+    throw new Error(`${resource} is in use by a calmrun job (see calmrun status)`);
   }
-  log(`${resource} is yours (${me.lane})${also}. Free it with: lane release ${resource}`);
+  if (!lease) log(`lane: calmrun hold ${resource} failed (exit ${code}): calmrun jobs will not wait for this claim`);
+  return lease;
 }
 
 /** A line saying calmrun runs `lane with` commands, or '' when lane's own line does. */

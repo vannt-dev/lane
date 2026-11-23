@@ -62,7 +62,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   lane brief [<lane>]        The rules for an agent working in a lane, to paste into its task
 
   lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator); ends with this lane's hold
-                                (with calmrun 0.3.0+ installed, calmrun jobs wait for it too)
+                                (with calmrun hold installed, calmrun jobs wait for it too;
+                                claiming again renews it)
   lane release <res>            Give it back
   lane with <res> [--slots N] [--cost K] [--prio high] [--label L] [--wait-timeout S]
            [--ticket ID] -- <command>

@@ -92,15 +92,18 @@ export function calmrun({ evenIfOff = false } = {}): Calmrun | null {
 export const versionText = (c: Calmrun) => c.version.join('.');
 
 /**
- * Whether this calmrun has `hold`: 0.3.0 or newer and `hold --help` answers. An older calmrun
- * would run `hold` as a command (and queue `hold emulator` as a job), so it is never called there.
+ * Whether this calmrun has `hold` with `--for`: 0.3.0 or newer, or (a build between releases)
+ * `hold --help` answers and names --for and --renew. A 0.2.0 runs `hold` as a command (and would
+ * queue `hold emulator` as a job): its `hold --help` fails, so it is never called there.
  */
 export function canHold(c: Calmrun): boolean {
   if (c.hold === undefined) {
-    const r = atLeast(c.version, HOLD_VERSION)
-      ? spawnTool(c.file, ['hold', '--help'], { encoding: 'utf8', windowsHide: true, timeout: 20_000 })
-      : undefined;
-    c.hold = r !== undefined && r.status === 0 && /--ttl/.test(`${r.stdout ?? ''}${r.stderr ?? ''}`);
+    if (atLeast(c.version, HOLD_VERSION)) c.hold = true;
+    else {
+      const r = spawnTool(c.file, ['hold', '--help'], { encoding: 'utf8', windowsHide: true, timeout: 20_000 });
+      const help = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+      c.hold = r.status === 0 && /--for/.test(help) && /--renew/.test(help);
+    }
   }
   return c.hold;
 }
@@ -114,7 +117,7 @@ export function insideCalmrun(): boolean {
 export interface Job {
   /** `<lane>:<kind>`, seen in `calmrun status` and `calmrun stats`. */
   label: string;
-  /** Points; none lets calmrun weigh the command by its kind (the same costs as lane's). */
+  /** Points; none lets calmrun weigh the command by its own detection. */
   cost?: number;
   prio?: 'high' | 'normal';
   /** A named resource the job also takes (emulator, gpu). */
@@ -152,16 +155,25 @@ export function runJob(c: Calmrun, job: Job, argv: readonly string[], cwd?: stri
 }
 
 /**
- * Takes a calmrun lease on a resource for a claim, so calmrun jobs that need it wait. Returns
- * the lease id, or the exit code when calmrun gave none (75: still in use when `waitS` ran out).
+ * Takes a calmrun lease on a resource for a claim, owned by the lane's folder: calmrun jobs that
+ * need it wait, except jobs run inside that folder (the lane's own), which use it. Returns the
+ * lease id, or the exit code when calmrun gave none (75: still in use when `waitS` ran out; 0
+ * tries once).
  */
-export function holdLease(c: Calmrun, resource: string, label: string, waitS?: number): { lease?: string; code: number } {
-  const args = ['hold', resource, '--ttl', String(CLAIM_TTL_S), '--label', label];
+export function holdLease(c: Calmrun, resource: string, lanePath: string, label: string, waitS?: number): { lease?: string; code: number } {
+  const args = ['hold', resource, '--for', lanePath, '--ttl', String(CLAIM_TTL_S), '--label', label];
   if (waitS !== undefined) args.push('--wait-timeout', String(waitS));
   const r = spawnTool(c.file, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], windowsHide: true });
   const lease = String(r.stdout ?? '').trim().split(/\r?\n/).pop()?.trim() ?? '';
   if (r.status === 0 && /^[\w.:-]{1,128}$/.test(lease)) return { lease, code: 0 };
   return { code: r.status ?? 1 };
+}
+
+/** Extends a lease by another claim's lifetime from now; false when calmrun no longer has it. */
+export function renewLease(c: Calmrun, lease: string): boolean {
+  const r = spawnTool(c.file, ['hold', '--renew', lease, '--ttl', String(CLAIM_TTL_S)],
+    { stdio: 'ignore', windowsHide: true, timeout: 20_000 });
+  return r.status === 0;
 }
 
 /** Gives a calmrun lease back; never throws (a lease already gone, or no calmrun, is fine). */

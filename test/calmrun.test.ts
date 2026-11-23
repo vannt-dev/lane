@@ -14,21 +14,26 @@ const { cmdClaim, cmdDone, cmdRelease } = lane;
 const tmp = (prefix = 'lane-calmrun-') => fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 const quiet = { say: () => {}, pollMs: 50, tellMs: 60_000, minFreeBytes: 0 };
 
-// The fake: --version, hold --help (0.3.0 and newer), hold, release, and running a job: the
-// command after `--` runs with CALMRUN_HELD set, like calmrun's own children.
+// The fake: --version, hold --help (0.3.0 and newer, or a build with hold.txt), hold, hold --renew,
+// release, and running a job: the command after `--` runs with CALMRUN_HELD set, like calmrun's own
+// children; the CALMRUN_LEASE a job gets is noted in <log>.lease.
 const FAKE = `import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 const argv = process.argv.slice(2);
-const version = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'version.txt'), 'utf8').trim();
+const here = path.dirname(fileURLToPath(import.meta.url));
+const version = fs.readFileSync(path.join(here, 'version.txt'), 'utf8').trim();
 if (process.env.FAKE_CALMRUN_LOG) fs.appendFileSync(process.env.FAKE_CALMRUN_LOG, JSON.stringify(argv) + '\\n');
 const [major, minor] = version.split('.').map(Number);
 if (argv[0] === '--version') { console.log('calmrun ' + version); process.exit(0); }
 if (argv[0] === 'hold' && argv[1] === '--help') {
-  if (major > 0 || minor >= 3) { console.log('Usage: calmrun hold <RESOURCES> [--ttl <SECS>] [--label <L>]'); process.exit(0); }
+  if (major > 0 || minor >= 3 || fs.existsSync(path.join(here, 'hold.txt'))) {
+    console.log('Usage: calmrun hold [--ttl <SECS>] [--label <L>] [--for <DIR>] [--renew <LEASE>] [RESOURCE]...'); process.exit(0);
+  }
   console.error('calmrun: cannot run hold: command not found: hold'); process.exit(127);
 }
+if (argv[0] === 'hold' && argv[1] === '--renew') process.exit(Number(process.env.FAKE_CALMRUN_RENEW_EXIT || 0));
 if (argv[0] === 'hold') {
   // what the claim's lock looks like while the hold waits
   const lock = process.env.FAKE_CALMRUN_LOCK;
@@ -38,6 +43,7 @@ if (argv[0] === 'hold') {
   console.log('lease-' + process.pid); process.exit(0);
 }
 if (argv[0] === 'release') process.exit(0);
+if (process.env.CALMRUN_LEASE) fs.appendFileSync(process.env.FAKE_CALMRUN_LOG + '.lease', process.env.CALMRUN_LEASE + '\\n');
 if (process.env.FAKE_CALMRUN_EXIT) process.exit(Number(process.env.FAKE_CALMRUN_EXIT));
 const cmd = argv.slice(argv.indexOf('--') + 1);
 const env = { ...process.env, CALMRUN_HELD: String(process.pid) };
@@ -47,8 +53,9 @@ process.exit(r.status ?? 1);
 `;
 
 /** A folder holding a fake calmrun of this version: calmrun.cmd on Windows, a shell script elsewhere. */
-function fakeCalmrun(version: string): string {
+function fakeCalmrun(version: string, hold = false): string {
   const dir = tmp('fake-calmrun-');
+  if (hold) fs.writeFileSync(path.join(dir, 'hold.txt'), '');
   fs.writeFileSync(path.join(dir, 'fake.mjs'), FAKE);
   fs.writeFileSync(path.join(dir, 'version.txt'), version);
   if (process.platform === 'win32') {
@@ -59,7 +66,13 @@ function fakeCalmrun(version: string): string {
   return dir;
 }
 
-const fakes = { new: fakeCalmrun('0.3.0'), old: fakeCalmrun('0.2.0'), tooOld: fakeCalmrun('0.1.4') };
+const fakes = {
+  new: fakeCalmrun('0.3.0'),
+  /** calmrun built from main between releases: still 0.2.0, with hold. */
+  main: fakeCalmrun('0.2.0', true),
+  old: fakeCalmrun('0.2.0'),
+  tooOld: fakeCalmrun('0.1.4'),
+};
 
 /** git's folder: the claim tests need git, and nothing else from PATH. */
 const gitDir = path.dirname(findOnPath('git') ?? 'git');
@@ -68,9 +81,12 @@ const gitDir = path.dirname(findOnPath('git') ?? 'git');
  * Runs `fn` with only `binDir` and git on PATH (so a calmrun installed here is never found),
  * calmrun turned on and a fresh log; returns what the fake was asked.
  */
-function withFake<T>(binDir: string, fn: () => T, extra: Record<string, string | undefined> = {}): { result: T; calls: string[][] } {
-  const log = path.join(tmp(), 'calls.jsonl');
-  const vars: Record<string, string | undefined> = { PATH: [binDir, gitDir].join(path.delimiter), LANE_CALMRUN: undefined, FAKE_CALMRUN_LOG: log, ...extra };
+function withFake<T>(binDir: string, fn: () => T, extra: Record<string, string | undefined> = {}):
+  { result: T; calls: string[][]; leases: string[] } {
+  const vars: Record<string, string | undefined> = {
+    PATH: [binDir, gitDir].join(path.delimiter), LANE_CALMRUN: undefined, FAKE_CALMRUN_LOG: path.join(tmp(), 'calls.jsonl'), ...extra,
+  };
+  const log = vars.FAKE_CALMRUN_LOG!;
   const old = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
   for (const [k, v] of Object.entries(vars)) {
     if (v === undefined) delete process.env[k];
@@ -79,7 +95,8 @@ function withFake<T>(binDir: string, fn: () => T, extra: Record<string, string |
   try {
     const result = fn();
     const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => JSON.parse(l) as string[]) : [];
-    return { result, calls };
+    const leases = fs.existsSync(`${log}.lease`) ? fs.readFileSync(`${log}.lease`, 'utf8').trim().split('\n') : [];
+    return { result, calls, leases };
   } finally {
     for (const [k, v] of Object.entries(old)) {
       if (v === undefined) delete process.env[k];
@@ -180,7 +197,10 @@ test("lane's own line gives up after --wait-timeout with exit 75", () => {
   assert.equal(locks.withSlot('build', 1, { lane: 'a' }, [process.execPath, '-e', ''], { ...quiet, waitTimeoutS: 0 }), 75);
 });
 
-/** Runs `fn` inside a new lane of a new repository. */
+/**
+ * Runs `fn` inside a new lane of a new repository; the emulator claim, if left, goes after (the
+ * tests share one lane root: a claim left by a failed test would hold up the next).
+ */
 function inLane<T>(repo: string, fn: (dir: string) => T): T {
   makeRepo(repo);
   const dir = take(repo, 'feat-x');
@@ -190,25 +210,35 @@ function inLane<T>(repo: string, fn: (dir: string) => T): T {
     return fn(dir);
   } finally {
     process.chdir(cwd);
+    fs.rmSync(path.join(lane.config.root, '.locks', 'emulator.json'), { force: true });
   }
 }
 
 const claimLock = (name: string) => new Locks(lane.config.root).read(name);
 
-test('a claim takes a calmrun lease, lane release gives it back, and the lane does not queue behind it', () => {
+test('a claim takes a calmrun lease for the lane folder, its own commands use it, lane release gives it back', () => {
   inLane('cr1', (dir) => {
+    const top = git(dir, 'rev-parse', '--show-toplevel');
     const claimed = withFake(fakes.new, () => capture(() => cmdClaim('emulator', { noWait: false })).out);
     assert.match(claimed.result, /emulator is yours \(cr1-1\), in calmrun too \(lease lease-\d+\)/);
     const hold = claimed.calls.find((c) => c[0] === 'hold' && c[1] !== '--help');
-    assert.deepEqual(hold, ['hold', 'emulator', '--ttl', '10800', '--label', 'cr1-1:claim']);
+    assert.deepEqual(hold, ['hold', 'emulator', '--for', path.resolve(top), '--ttl', '10800', '--label', 'cr1-1:claim']);
     const lease = claimLock('emulator')?.calmrunLease;
     assert.match(lease ?? '', /^lease-\d+$/);
-    const said: string[] = [];
-    const own = withFake(fakes.new, () => new Locks(lane.config.root).withSlot('build', 2, { lane: 'cr1-1', lanePath: git(dir, 'rev-parse', '--show-toplevel') },
-      [process.execPath, '-e', ''], { ...quiet, say: (m) => said.push(m) }));
-    assert.equal(own.result, 0);
-    assert.deepEqual(jobs(own.calls), [], "this lane's commands do not wait for its own lease");
-    assert.match(said.join('\n'), /holds emulator in calmrun too/);
+    const locks = new Locks(lane.config.root);
+    const me = { lane: 'cr1-1', lanePath: top };
+    const build = withFake(fakes.new, () => locks.withSlot('build', 2, me, [process.execPath, '-e', ''], { ...quiet, label: 'b' }));
+    assert.equal(build.result, 0);
+    assert.deepEqual(jobs(build.calls), [['--label', 'cr1-1:b', '--', process.execPath, '-e', '']], 'it goes to calmrun');
+    assert.deepEqual(build.leases, [lease], 'with the lease, so calmrun does not hold it behind that lease');
+    const emu = withFake(fakes.new, () => locks.withSlot('emulator', 1, me, [process.execPath, '-e', ''], { ...quiet, label: 'e', waitTimeoutS: 0 }));
+    assert.equal(emu.result, 0, 'the claiming lane does not wait for its own claim');
+    assert.deepEqual(jobs(emu.calls), [['--label', 'cr1-1:e', '--needs', 'emulator', '--wait-timeout', '0', '--', process.execPath, '-e', '']]);
+    assert.deepEqual(emu.leases, [lease]);
+    const other = withFake(fakes.new, () => locks.withSlot('emulator', 1, { lane: 'cr1-9', lanePath: path.join(top, '..', 'cr1-9') },
+      [process.execPath, '-e', ''], { ...quiet, waitTimeoutS: 0 }));
+    assert.equal(other.result, 75, 'another lane waits for the claim');
+    assert.deepEqual(jobs(other.calls), []);
     const released = withFake(fakes.new, () => capture(() => cmdRelease('emulator')));
     assert.deepEqual(released.calls.filter((c) => c[0] === 'release'), [['release', lease]]);
     assert.equal(claimLock('emulator'), null);
@@ -225,12 +255,12 @@ test('lane done gives the lease of a claim back', () => {
   });
 });
 
-test('a calmrun without hold: the claim is lane-only, with a note, and hold is never called', () => {
+test('a calmrun without hold: the claim is lane-only, with a note, and only hold --help is asked', () => {
   inLane('cr3', () => {
     const { result, calls } = withFake(fakes.old, () => capture(() => cmdClaim('emulator', { noWait: false })).out);
     assert.match(result, /calmrun 0\.2\.0 has no hold/);
     assert.match(result, /emulator is yours \(cr3-1\)\. Free it/);
-    assert.deepEqual(calls.filter((c) => c[0] === 'hold'), []);
+    assert.deepEqual(calls.filter((c) => c[0] === 'hold'), [['hold', '--help']], 'only asked whether it has hold');
     assert.equal(claimLock('emulator')?.calmrunLease, undefined);
     withFake(fakes.old, () => capture(() => cmdRelease('emulator')));
   });
@@ -240,8 +270,35 @@ test('claim --no-wait fails, and frees the lane lock, when a calmrun job holds t
   inLane('cr4', () => {
     const { calls } = withFake(fakes.new, () => assert.throws(() => capture(() => cmdClaim('emulator', { noWait: true })), /in use by a calmrun job/),
       { FAKE_CALMRUN_HOLD_EXIT: '75' });
-    assert.deepEqual(calls.find((c) => c[0] === 'hold' && c[1] !== '--help')?.slice(-2), ['--wait-timeout', '1']);
+    assert.deepEqual(calls.find((c) => c[0] === 'hold' && c[1] !== '--help')?.slice(-2), ['--wait-timeout', '0']);
     assert.equal(claimLock('emulator'), null);
+  });
+});
+
+test('claiming again renews the lease, and holds anew when calmrun no longer has it', () => {
+  inLane('cr6', () => {
+    withFake(fakes.new, () => capture(() => cmdClaim('emulator', { noWait: false })));
+    const first = claimLock('emulator')!;
+    const again = withFake(fakes.new, () => capture(() => cmdClaim('emulator', { noWait: true })).out);
+    assert.match(again.result, /emulator is yours already \(cr6-1\); claim and calmrun lease lease-\d+ renewed/);
+    assert.deepEqual(again.calls.filter((c) => c[0] === 'hold' && c[1] !== '--help'), [['hold', '--renew', first.calmrunLease!, '--ttl', '10800']]);
+    assert.equal(claimLock('emulator')?.calmrunLease, first.calmrunLease);
+    assert.ok(claimLock('emulator')!.since >= first.since, 'the claim starts again');
+    const gone = withFake(fakes.new, () => capture(() => cmdClaim('emulator', { noWait: false })).out, { FAKE_CALMRUN_RENEW_EXIT: '1' });
+    const holds = gone.calls.filter((c) => c[0] === 'hold' && c[1] !== '--help');
+    assert.equal(holds.length, 2);
+    assert.equal(holds[1]?.[1], 'emulator', 'a new hold after the renew failed');
+    assert.notEqual(claimLock('emulator')?.calmrunLease, first.calmrunLease);
+    withFake(fakes.new, () => capture(() => cmdRelease('emulator')));
+  });
+});
+
+test('a calmrun built between releases (0.2.0 with hold --help) takes leases', () => {
+  inLane('cr7', () => {
+    const { result, calls } = withFake(fakes.main, () => capture(() => cmdClaim('emulator', { noWait: false })).out);
+    assert.match(result, /in calmrun too \(lease lease-\d+\)/);
+    assert.deepEqual(calls.filter((c) => c[0] === 'hold').map((c) => c[1]), ['--help', 'emulator']);
+    withFake(fakes.main, () => capture(() => cmdRelease('emulator')));
   });
 });
 
