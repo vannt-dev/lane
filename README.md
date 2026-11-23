@@ -99,6 +99,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_WITH_MIN_FREE_GB` | Free memory a `lane with` command needs to start beside a running one (default: an eighth of the RAM, at least 3; `0`: off) |
 | `LANE_WITH_PASS_MIN` | Minutes a waiting command may be passed by later, lighter ones (default 10; `0`: strict order) |
 | `LANE_VITEST_WORKERS` | `--maxWorkers` given to vitest started by `lane with` (default: 1 up to 4 cores, 2 up to 11, then 3) |
+| `LANE_CALMRUN` | `0`: `lane with` keeps its own line even when [calmrun](https://github.com/vannt-dev/calmrun) is installed (see Sharing one queue with calmrun) |
 
 ## Commands
 
@@ -116,8 +117,8 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. A lane that does not merge is listed with the lane it conflicts with and the files. When the checks fail it looks for the lanes to blame, see Which lanes break each other (`--no-bisect` skips that). Kept and held when it fails, to look at. |
 | `lane sync <repo> [--push] [--cmd C]...` | After a lane merged: rebases the other lanes onto the new base (a conflicting rebase is aborted and the lane left as it was), reinstalls when a lockfile changed, runs the checks. `--push` force-pushes (with lease) those that pass. Skips lanes with local changes, a claim or a process in them, and lanes with no history in common with the base (rewritten history: move that work by hand). |
 | `lane brief [<lane>]` | The rules for an agent working in a lane, to paste at the top of its task: an agent started by another session does not read `CLAUDE.local.md`. |
-| `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. |
-| `lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <cmd>` | Runs a command holding K of the resource's N slots (K: `--cost`, else by the kind of command; N: `LANE_WITH_SLOTS`, else `build` suits the machine and others 1), waiting in line for them and for free memory, at below-normal CPU priority. See Heavy commands. |
+| `lane claim <res>` / `lane release <res>` | Takes and gives back something only one lane may use (the Android emulator). `claim` waits; `--no-wait` fails instead. A claim ends with the lane hold it was made under. With calmrun 0.3.0 or newer it also holds the resource in calmrun. |
+| `lane with <res> [--slots N] [--cost K] [--prio high] [--label L] [--wait-timeout S] [--ticket ID] -- <cmd>` | Runs a command holding K of the resource's N slots (K: `--cost`, else by the kind of command; N: `LANE_WITH_SLOTS`, else `build` suits the machine and others 1), waiting in line for them and for free memory, at below-normal CPU priority. `--wait-timeout S` gives up after S seconds with exit 75. With calmrun installed, calmrun runs it. See Heavy commands. |
 | `lane locks [--json]` | Who holds what, and who waits in line (with each command's label); `--json` adds free memory, for other tools. |
 | `lane bump <text>` | Moves the waiting commands whose label or lane holds the text to the front of their line. |
 | `lane stats [--days N]` | How long `lane with` commands waited and ran over the last N days (default 7), per command: to size `LANE_WITH_SLOTS` for the machine. |
@@ -142,7 +143,9 @@ lane clean --yes --force    # merged slots given back (not one still in use), th
 
 Several agents on one machine each start a test suite, a type check and a build, and the
 machine stalls: tests time out for no fault of the code. `lane with` gives a resource a budget
-of slots shared by every lane, and a command takes as many as it weighs:
+of slots shared by every lane, and a command takes as many as it weighs. With
+[calmrun](https://github.com/vannt-dev/calmrun) installed, calmrun runs these commands instead,
+so there is one queue for the machine (see Sharing one queue with calmrun).
 
 ```sh
 lane tune                                                  # what suits this machine, and how to set it
@@ -190,6 +193,47 @@ A sample Claude Code hook, [`examples/heavy-commands-hook.mjs`](examples/heavy-c
 refuses a heavy command (vitest, jest, tsc, pytest, test and build tools) run inside a lane
 without `lane with`, and answers with the command to use. The file says how to add it to
 `.claude/settings.json`; adjust its list to what is heavy on your machine.
+
+## Sharing one queue with calmrun
+
+[calmrun](https://github.com/vannt-dev/calmrun) is a machine-wide queue for heavy commands
+with the same rules (points by kind, free memory, one run per `node_modules`). Side by side,
+two queues would not see each other: lane's commands and calmrun's would run at once, about
+twice the load meant, and `lane claim emulator` would not stop an Android device test that
+calmrun starts. So when calmrun is installed, lane hands its work to it:
+
+- **When.** calmrun 0.2.0 or newer is on `PATH` (looked up once per lane command, never in the
+  current folder) and `LANE_CALMRUN` is not `0`. Otherwise lane keeps its own line, as above.
+- **`lane with build -- <cmd>`** runs `calmrun --label <lane>:<kind> -- <cmd>`, the command as
+  typed. calmrun weighs it by its kind (the same costs as lane's), gives vitest, gradle and
+  cargo their workers, waits for free memory and disk, and runs it at low priority. lane adds
+  `--cost`, `--prio high`, `--wait-timeout` and `--ticket` only when given; `--label L` makes
+  the label `<lane>:L`. calmrun's budget and config apply (`calmrun doctor`), not
+  `LANE_WITH_SLOTS`, `--slots`, `LANE_VITEST_WORKERS`, `LANE_WITH_MIN_FREE_GB`,
+  `LANE_WITH_PASS_MIN` or `LANE_LOW_CPU`.
+- **Other resources** (`lane with emulator -- <cmd>`): lane takes its own lock on the resource
+  first (its slots and `--cost` count there, and a `lane claim` keeps it apart), then runs
+  `calmrun --needs emulator ... -- <cmd>`, so calmrun jobs that need it (calmrun gives
+  `gradle connected*` the emulator by itself) wait too. calmrun's points come from the kind.
+- **Exit codes** pass through: the command's own, or calmrun's (`2` a refused endless command,
+  `137` stopped for memory, `130` Ctrl+C, `75` when `--wait-timeout` ran out: calmrun keeps
+  the place for 10 minutes, and the same `lane with` again with `--ticket <id>` takes it back).
+  Ctrl+C reaches calmrun and the command.
+- **Nested.** Inside a calmrun job (calmrun sets `CALMRUN_HELD`), `lane with build` runs at once:
+  the job holds the points already. Another resource still takes lane's lock.
+- **Claims.** With calmrun 0.3.0 or newer (`calmrun hold`), `lane claim emulator` also takes a
+  calmrun lease on it, labelled `<lane>:claim`, for 3 hours (as long as a claim lasts), so
+  calmrun jobs that need the emulator wait. The lease is given back with the claim:
+  `lane release`, `lane done`, `lane free`, `lane rm`, or a stale claim taken over.
+  `--no-wait` gives up after a second when a calmrun job uses it. An older calmrun gets a
+  one-line note, and the claim stays lane's only.
+- **Your own lease.** While a lane holds such a lease, its own `lane with` commands use lane's
+  line, not calmrun: calmrun would hold them behind that lease (a device test needs the
+  emulator the lane holds). A command started with plain `calmrun` from that lane waits for
+  the lease too: run device tests through `lane with`, or release first.
+- `lane locks`, `lane stats`, `lane tune` and `lane bump` say when calmrun is in charge;
+  `calmrun status` and `calmrun stats` show its jobs, and `lane locks --json` has `calmrun`
+  (its version, or null).
 
 ## Which lanes break each other
 

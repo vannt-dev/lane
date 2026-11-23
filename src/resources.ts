@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { calmrun, canHold, EXIT_WAIT_TIMEOUT, holdLease, versionText } from './calmrun.ts';
 import { locks } from './checks.ts';
 import { config } from './config.ts';
 import { Queue } from './queue.ts';
@@ -23,7 +24,39 @@ function here(): Holder & { lanePath: string } {
 export function cmdClaim(resource: string, opts: { noWait: boolean }): void {
   const me = here();
   locks().take(resource, me, { wait: !opts.noWait });
-  log(`${resource} is yours (${me.lane}). Free it with: lane release ${resource}`);
+  const also = holdInCalmrun(resource, me, opts.noWait);
+  log(`${resource} is yours (${me.lane})${also}. Free it with: lane release ${resource}`);
+}
+
+/**
+ * With calmrun installed, a claim also takes a calmrun lease on the resource (as long as a
+ * claim lasts), so calmrun jobs that need it (an Android device test needs the emulator) wait
+ * too. A calmrun without `hold` gets a note instead. Returns what to add to the message.
+ */
+function holdInCalmrun(resource: string, me: Holder, noWait: boolean): string {
+  const c = calmrun();
+  if (!c) return '';
+  if (!canHold(c)) {
+    log(`lane: calmrun ${versionText(c)} has no hold (0.3.0 or newer has): calmrun jobs will not wait for this claim`);
+    return '';
+  }
+  const { lease, code } = holdLease(c, resource, `${me.lane}:claim`, noWait ? 1 : undefined);
+  if (lease) {
+    locks().setCalmrunLease(resource, lease);
+    return `, in calmrun too (lease ${lease})`;
+  }
+  if (code === EXIT_WAIT_TIMEOUT) {
+    locks().release(resource, me.lane);
+    throw new Error(`${resource} is in use by a calmrun job (see calmrun status)`);
+  }
+  log(`lane: calmrun hold ${resource} failed (exit ${code}): calmrun jobs will not wait for this claim`);
+  return '';
+}
+
+/** A line saying calmrun runs `lane with` commands, or '' when lane's own line does. */
+function calmrunNote(): string {
+  const c = calmrun();
+  return c ? `calmrun ${versionText(c)} runs lane with commands (LANE_CALMRUN=0: lane's own line): ` : '';
 }
 
 export function cmdRelease(resource: string): void {
@@ -38,9 +71,12 @@ export function cmdLocks(opts: { json?: boolean } = {}): void {
       locks: all,
       waiting: waiting.map(({ id: _id, ...w }) => w),
       memory: { availableBytes: availableMemory(), minFreeBytes: minFreeMemory(), totalBytes: os.totalmem() },
+      calmrun: calmrun() ? versionText(calmrun()!) : null,
     }, null, 2));
     return;
   }
+  const note = calmrunNote();
+  if (note) log(`${note}its jobs are in calmrun status\n`);
   if (all.length === 0 && waiting.length === 0) return log('no locks held');
   if (all.length > 0) printTable(['resource', 'held by', 'since', 'state'], all.map((l) => [
     l.name,
@@ -78,6 +114,8 @@ export function cmdBump(text: string): number {
     }
   }
   if (moved === 0) log(`no waiting command matches "${text}"`);
+  const note = calmrunNote();
+  if (note) log(`${note}calmrun bump "${text}" moves those`);
   return moved;
 }
 
@@ -88,6 +126,11 @@ export function cmdTune(): void {
   const slots = buildSlots(cores, total);
   const workers = vitestWorkers(cores);
   const minFree = Math.max(3, Math.round(total / 1024 ** 3 / 8));
+  const note = calmrunNote();
+  if (note) {
+    log(`${note}calmrun's budget, memory and worker settings apply (calmrun doctor suggests them). ` +
+      'The settings below count only with LANE_CALMRUN=0, or for resources other than build (their slots).\n');
+  }
   log(`${cores} logical cores, ${gb(total)} RAM, ${gb(availableMemory())} free now`);
   printTable(['setting', 'suggested', 'now'], [
     ['LANE_WITH_SLOTS', `build=${slots}`, process.env.LANE_WITH_SLOTS ?? `(not set: build=${slots})`],
@@ -112,6 +155,8 @@ function waiters() {
 
 /** Waiting and running times of `lane with` commands over the last days, most waiting first. */
 export function cmdStats(days: number): void {
+  const note = calmrunNote();
+  if (note) log(`${note}see calmrun stats. Below: runs lane's own line made.\n`);
   const rows = summarize(readStats(config.root), { days });
   if (rows.length === 0) return log(`no lane with runs in the last ${days} day(s)`);
   const s = (ms: number) => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;

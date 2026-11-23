@@ -13,3 +13,7 @@ for (const key of Object.keys(process.env)) {
   if (/^LANE_(WITH|VITEST_WORKERS)/.test(key)) delete process.env[key];
 }
 process.env.LANE_WITH_MIN_FREE_GB = '0';
+// calmrun installed on the machine (or the suite run inside a calmrun job) would take over every
+// lane with; the calmrun tests put a fake one on PATH and turn this back on.
+process.env.LANE_CALMRUN = '0';
+delete process.env.CALMRUN_HELD;

@@ -8,6 +8,8 @@ export interface Holder {
   pid?: number;
   /** The lane's hold when the lock was taken: the lock ends with that hold. */
   lease?: string;
+  /** The calmrun lease taken with a claim (see calmrun.ts), given back with the claim. */
+  calmrunLease?: string;
 }
 
 export interface Lock extends Holder {
