@@ -160,6 +160,15 @@ export class Lane extends Checkout {
     return stateText(this.state());
   }
 
+  /**
+   * Ends the lane's claims: they end with its hold anyway, and a calmrun lease taken with one
+   * (see calmrun.ts) is given back now instead of hours later.
+   */
+  private dropClaims(): void {
+    const all = locks();
+    for (const c of all.claimsOf(this.dir)) all.release(c.name);
+  }
+
   /** Detached (the branch is free elsewhere, deleted when safe), unlocked, folder and caches kept. */
   giveBack(safe: boolean): string {
     const task = this.task();
@@ -169,6 +178,7 @@ export class Lane extends Checkout {
     if (branch && safe) this.clone.tryGit('branch', '-D', branch);
     if (this.locked !== null) this.clone.tryGit('worktree', 'unlock', this.dir);
     this.setMeta({ task, released: true, releasedAt: Date.now() });
+    this.dropClaims();
     const kept = branch ? `; local branch ${branch} ${safe ? 'deleted (its work is on the remote or merged)' : 'kept'}` : '';
     const left = dropEmptyBranch(this.clone, started);
     return `gave back ${this.name}${task ? ` (was: ${task})` : ''}${kept}${left ? `; ${left}` : ''}`;
@@ -179,6 +189,7 @@ export class Lane extends Checkout {
     if (samePath(this.dir, this.clone.dir)) throw new Error('refusing to remove a main clone');
     if (!underRoot(this.dir)) throw new Error(`${this.dir} is not under the lane root`);
     if (this.locked !== null) this.clone.tryGit('worktree', 'unlock', this.dir);
+    this.dropClaims();
     this.clone.tryGit('worktree', 'remove', '--force', this.dir);
     const gone = !this.exists || rmLaneFolder(this.dir);
     this.clone.tryGit('worktree', 'prune');

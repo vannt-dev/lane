@@ -62,8 +62,11 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   lane brief [<lane>]        The rules for an agent working in a lane, to paste into its task
 
   lane claim <res> [--no-wait]  Hold a shared thing (e.g. emulator); ends with this lane's hold
+                                (with calmrun hold installed, calmrun jobs wait for it too;
+                                claiming again renews it)
   lane release <res>            Give it back
-  lane with <res> [--slots N] [--cost K] [--prio high] [--label L] -- <command>
+  lane with <res> [--slots N] [--cost K] [--prio high] [--label L] [--wait-timeout S]
+           [--ticket ID] -- <command>
                                 Run a command holding K of the resource's N slots, waiting in
                                 line (--prio high: ahead of normal waiters), at below-normal CPU
                                 priority (LANE_LOW_CPU=0: normal). K: --cost, else 2 for test
@@ -74,6 +77,10 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
                                 may pass for LANE_WITH_PASS_MIN (10) minutes; one test run or
                                 build per node_modules; vitest gets --maxWorkers; docker compose
                                 up needs -d. A nested lane with of the same resource runs at once.
+                                --wait-timeout S: give up waiting after S seconds (exit 75).
+                                calmrun 0.2.0+ on PATH runs the command instead (one budget for
+                                lane and calmrun; other resources than build: --needs <res>);
+                                LANE_CALMRUN=0 keeps lane's own line. --ticket: calmrun's kept place.
   lane locks [--json]           Who holds what, and who waits in line
   lane bump <text>              Move waiting commands whose label or lane holds text to the front
   lane stats [--days N]         Waiting and running times of lane with commands (default 7 days)
@@ -120,6 +127,8 @@ const options = {
     cost: { type: 'string' },
     prio: { type: 'string' },
     label: { type: 'string' },
+    'wait-timeout': { type: 'string' },
+    ticket: { type: 'string' },
     days: { type: 'string' },
     help: { type: 'boolean', short: 'h', default: false },
   },
@@ -179,6 +188,8 @@ function main(): number {
     return cmdWith(a, tail, values.slots === undefined ? withSlotsFor(a) : whole(values.slots, '--slots', 1, 64), {
       cost: values.cost === undefined ? undefined : whole(values.cost, '--cost', 1, 64),
       prio: values.prio, label: values.label,
+      waitTimeoutS: values['wait-timeout'] === undefined ? undefined : whole(values['wait-timeout'], '--wait-timeout', 0, 7 * 86_400),
+      ticket: values.ticket === undefined ? undefined : whole(values.ticket, '--ticket', 1, Number.MAX_SAFE_INTEGER),
     });
   } else if (cmd === 'stats' && a === undefined) cmdStats(values.days === undefined ? 7 : whole(values.days, '--days', 1, 365));
   else {

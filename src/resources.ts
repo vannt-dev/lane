@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { calmrun, canHold, EXIT_WAIT_TIMEOUT, holdLease, renewLease, versionText, type Calmrun } from './calmrun.ts';
 import { locks } from './checks.ts';
 import { config } from './config.ts';
 import { Queue } from './queue.ts';
@@ -20,10 +21,59 @@ function here(): Holder & { lanePath: string } {
   return { lane: path.basename(top), lanePath: path.resolve(top), lease: currentLease(top) };
 }
 
+/**
+ * Claims a resource. With calmrun installed, the claim also takes a calmrun lease on it (as
+ * long as a claim lasts), so calmrun jobs that need it (an Android device test needs the
+ * emulator) wait too; a calmrun without `hold` gets a note instead.
+ */
 export function cmdClaim(resource: string, opts: { noWait: boolean }): void {
   const me = here();
-  locks().take(resource, me, { wait: !opts.noWait });
-  log(`${resource} is yours (${me.lane}). Free it with: lane release ${resource}`);
+  const c = calmrun();
+  const holder = c && canHold(c) ? c : null;
+  if (c && !holder) log(`lane: calmrun ${versionText(c)} has no hold (0.3.0 or newer has): calmrun jobs will not wait for this claim`);
+  const mine = locks().claimsOf(me.lanePath).find((l) => l.name === resource && !l.stale);
+  if (mine) return reclaim(resource, me, mine.calmrunLease, holder, opts.noWait);
+  // while calmrun's hold may wait, the claim lives only as long as this process: a lane killed
+  // then (Ctrl+C, an agent's time limit) leaves no claim behind
+  locks().take(resource, holder ? { ...me, pid: process.pid } : me, { wait: !opts.noWait });
+  const lease = holder ? holdFor(holder, resource, me, opts.noWait) : undefined;
+  if (holder) locks().settleClaim(resource, lease);
+  log(`${resource} is yours (${me.lane})${lease ? `, in calmrun too (lease ${lease})` : ''}. Free it with: lane release ${resource}`);
+}
+
+/**
+ * A claim the lane holds already, claimed again (an agent that lost track, a long session):
+ * its lifetime starts again, and so does its calmrun lease (`hold --renew`); a lease calmrun no
+ * longer has, or none at all, is taken anew.
+ */
+function reclaim(resource: string, me: Holder & { lanePath: string }, lease: string | undefined, holder: Calmrun | null,
+  noWait: boolean): void {
+  let now = lease;
+  if (holder && !(lease && renewLease(holder, lease))) now = holdFor(holder, resource, me, noWait, false);
+  locks().settleClaim(resource, now);
+  log(`${resource} is yours already (${me.lane}); claim${now ? ` and calmrun lease ${now}` : ''} renewed for 3 hours. ` +
+    `Free it with: lane release ${resource}`);
+}
+
+/**
+ * Takes the calmrun lease for a claim, owned by the lane's folder: other calmrun jobs that need
+ * the resource wait, the lane's own (run inside its folder) use it. A calmrun job holding it
+ * now: with --no-wait (one try) the claim fails and, when it is new, is given back.
+ */
+function holdFor(c: Calmrun, resource: string, me: Holder & { lanePath: string }, noWait: boolean, fresh = true): string | undefined {
+  const { lease, code } = holdLease(c, resource, me.lanePath, `${me.lane}:claim`, noWait ? 0 : undefined);
+  if (code === EXIT_WAIT_TIMEOUT) {
+    if (fresh) locks().release(resource, me.lane);
+    throw new Error(`${resource} is in use by a calmrun job (see calmrun status)`);
+  }
+  if (!lease) log(`lane: calmrun hold ${resource} failed (exit ${code}): calmrun jobs will not wait for this claim`);
+  return lease;
+}
+
+/** A line saying calmrun runs `lane with` commands, or '' when lane's own line does. */
+function calmrunNote(): string {
+  const c = calmrun();
+  return c ? `calmrun ${versionText(c)} runs lane with commands (LANE_CALMRUN=0: lane's own line): ` : '';
 }
 
 export function cmdRelease(resource: string): void {
@@ -38,9 +88,12 @@ export function cmdLocks(opts: { json?: boolean } = {}): void {
       locks: all,
       waiting: waiting.map(({ id: _id, ...w }) => w),
       memory: { availableBytes: availableMemory(), minFreeBytes: minFreeMemory(), totalBytes: os.totalmem() },
+      calmrun: calmrun() ? versionText(calmrun()!) : null,
     }, null, 2));
     return;
   }
+  const note = calmrunNote();
+  if (note) log(`${note}its jobs are in calmrun status\n`);
   if (all.length === 0 && waiting.length === 0) return log('no locks held');
   if (all.length > 0) printTable(['resource', 'held by', 'since', 'state'], all.map((l) => [
     l.name,
@@ -78,6 +131,8 @@ export function cmdBump(text: string): number {
     }
   }
   if (moved === 0) log(`no waiting command matches "${text}"`);
+  const note = calmrunNote();
+  if (note) log(`${note}calmrun bump "${text}" moves those`);
   return moved;
 }
 
@@ -88,6 +143,11 @@ export function cmdTune(): void {
   const slots = buildSlots(cores, total);
   const workers = vitestWorkers(cores);
   const minFree = Math.max(3, Math.round(total / 1024 ** 3 / 8));
+  const note = calmrunNote();
+  if (note) {
+    log(`${note}calmrun's budget, memory and worker settings apply (calmrun doctor suggests them). ` +
+      'The settings below count only with LANE_CALMRUN=0, or for resources other than build (their slots).\n');
+  }
   log(`${cores} logical cores, ${gb(total)} RAM, ${gb(availableMemory())} free now`);
   printTable(['setting', 'suggested', 'now'], [
     ['LANE_WITH_SLOTS', `build=${slots}`, process.env.LANE_WITH_SLOTS ?? `(not set: build=${slots})`],
@@ -112,6 +172,8 @@ function waiters() {
 
 /** Waiting and running times of `lane with` commands over the last days, most waiting first. */
 export function cmdStats(days: number): void {
+  const note = calmrunNote();
+  if (note) log(`${note}see calmrun stats. Below: runs lane's own line made.\n`);
   const rows = summarize(readStats(config.root), { days });
   if (rows.length === 0) return log(`no lane with runs in the last ${days} day(s)`);
   const s = (ms: number) => `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;

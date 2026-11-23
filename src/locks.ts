@@ -3,6 +3,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { calmrun, EXIT_WAIT_TIMEOUT, insideCalmrun, releaseLease, runJob, type Calmrun } from './calmrun.ts';
+import { samePath } from './fsutil.ts';
 import { isStale, pidAlive, type Holder, type Lock, type LockInfo, type StaleRules } from './lock-state.ts';
 import { errCode, runArgv, sleepMs } from './proc.ts';
 import { Queue } from './queue.ts';
@@ -70,17 +72,23 @@ export class Locks {
         } catch {
           return busy;
         }
+        if (cur?.calmrunLease) releaseLease(cur.calmrunLease);
       }
     }
     return this.read(name) ?? busy;
   }
 
-  /** Tries `attempt` until it gives a value, saying now and then what it waits for. */
-  private waitFor<T>(attempt: () => T | null, waiting: () => string, pollMs: number, say: Say, tellMs = 60_000): T {
+  /**
+   * Tries `attempt` until it gives a value, saying now and then what it waits for; null once
+   * `deadline` (ms since 1970) has passed.
+   */
+  private waitFor<T>(attempt: () => T | null, waiting: () => string, pollMs: number, say: Say, tellMs = 60_000,
+    deadline = Infinity): T | null {
     let told = 0;
     for (;;) {
       const got = attempt();
       if (got !== null) return got;
+      if (Date.now() >= deadline) return null;
       if (Date.now() - told > tellMs) {
         say(waiting());
         told = Date.now();
@@ -104,7 +112,24 @@ export class Locks {
     if (!cur) return false;
     if (lane && cur.lane !== lane) throw new Error(`${name} is held by ${cur.lane}, not ${lane}`);
     fs.rmSync(this.file(name), { force: true });
+    if (cur.calmrunLease) releaseLease(cur.calmrunLease);
     return true;
+  }
+
+  /**
+   * Makes a claim taken under this process's pid (while calmrun's hold waited) a claim of the
+   * lane again, from now, with the calmrun lease taken for it, so the claim's end gives that back.
+   */
+  settleClaim(name: string, calmrunLease?: string): void {
+    const cur = this.read(name);
+    if (!cur) throw new Error(`${name} is not held`);
+    const { pid: _pid, calmrunLease: _old, ...claim } = cur;
+    fs.writeFileSync(this.file(name), JSON.stringify({ ...claim, since: Date.now(), ...(calmrunLease ? { calmrunLease } : {}) }));
+  }
+
+  /** The claims (locks held across commands, not by a process) of the lane in `lanePath`. */
+  claimsOf(lanePath: string): LockInfo[] {
+    return this.list().filter((l) => !l.pid && l.lanePath !== undefined && samePath(l.lanePath, lanePath));
   }
 
   list(): LockInfo[] {
@@ -148,26 +173,54 @@ export class Locks {
    * takes a lock on its node_modules, so two never share one. A command run by another
    * `lane with` of the same resource (LANE_WITH names it) runs at once: its caller holds the
    * slots already. Each run is logged for `lane stats`.
+   *
+   * With calmrun installed (see calmrun.ts and route), calmrun runs it instead: `build` goes
+   * straight to calmrun's budget; another resource is still taken here first (so `lane claim`
+   * keeps it apart), then calmrun runs the command with `--needs <resource>`.
+   *
+   * A resource the lane claimed is its own: the command runs without waiting for that claim,
+   * and calmrun lets it use the claim's lease (CALMRUN_LEASE; jobs in the lane's folder do anyway).
    */
   withSlot(name: string, slots: number, holder: Holder, argv: readonly string[], opts: WithOptions = {}): number {
     const { prio = 'normal', pollMs = 2000, tellMs = 30_000, say = console.log } = opts;
     const kind = opts.kind ?? detectKind(argv);
+    if (heldByCaller(name)) return runArgv(prepareArgv(argv), opts.cwd);
+    const via = this.route(name);
+    if (via === 'nested') return runArgv(prepareArgv(argv), opts.cwd);
+    const job = via && {
+      label: `${holder.lane}:${opts.label ?? kind ?? commandLabel(argv)}`,
+      prio, waitTimeoutS: opts.waitTimeoutS, ticket: opts.ticket,
+    };
+    const mine = this.claimsOfHolder(holder);
+    const leases = mine.flatMap((l) => (l.calmrunLease ? [l.calmrunLease] : []));
+    const withLeases = (env: NodeJS.ProcessEnv) => leases.length === 0 ? env
+      : { ...env, CALMRUN_LEASE: [env.CALMRUN_LEASE, ...leases].filter(Boolean).join(',') };
+    if (via && job && name === 'build') return runJob(via, { ...job, cost: opts.cost }, argv, opts.cwd, withLeases(process.env));
+    if (!via && opts.ticket !== undefined) say("lane: --ticket is for calmrun; lane's own line has none, joining at its end");
+    const laneWith = { ...process.env, LANE_WITH: [process.env.LANE_WITH, `${name}:${process.pid}`].filter(Boolean).join(',') };
+    if (slots === 1 && mine.some((l) => l.name === name)) {
+      return via && job ? runJob(via, { ...job, needs: name }, argv, opts.cwd, withLeases(laneWith))
+        : lowCpu(() => runArgv(prepareArgv(argv), opts.cwd, laneWith));
+    }
     const cost = costFor(kind, slots, opts.cost);
     if (cost > slots) throw new Error(`--cost ${cost} is more than the ${slots} slots of ${name}: raise --slots or LANE_WITH_SLOTS`);
-    const command = prepareArgv(argv);
-    if (heldByCaller(name)) return runArgv(command, opts.cwd);
+    // calmrun weighs the command, adds its worker flags and checks memory and node_modules itself
+    const command = via ? [...argv] : prepareArgv(argv);
     const me = { ...holder, pid: process.pid };
     const label = opts.label ?? commandLabel(argv);
-    const deps = depsLockName(kind, opts.cwd ?? process.cwd());
-    const minFree = opts.minFreeBytes ?? minFreeMemory();
+    const deps = via ? undefined : depsLockName(kind, opts.cwd ?? process.cwd());
+    const minFree = via ? 0 : opts.minFreeBytes ?? minFreeMemory();
     const passMs = opts.passLimitMs ?? passLimitMs();
     const freeMemory = opts.freeMemory ?? availableMemory;
     const queue = new Queue(path.join(this.dir, 'queue', name));
     const start = Date.now();
+    const deadline = opts.waitTimeoutS === undefined ? Infinity : start + opts.waitTimeoutS * 1000;
     const id = queue.join({ lane: holder.lane, pid: process.pid, cost, prio, since: start, label });
     let place = 0;
     let why = '';
-    let got: string[];
+    let got: string[] | null;
+    const waiting = () => `waiting for ${name}: ${this.inUse(name, slots)} of ${slots} slots in use, ${ordinal(place + 1)} in line` +
+      `${cost > 1 ? ` (needs ${cost})` : ''}${why && why !== 'line' ? `; ${why}` : ''}`;
     try {
       got = this.waitFor(() => {
         const line = queue.line();
@@ -196,23 +249,43 @@ export class Locks {
           return null;
         }
         return deps ? [...taken, deps] : taken;
-      }, () => `waiting for ${name}: ${this.inUse(name, slots)} of ${slots} slots in use, ${ordinal(place + 1)} in line` +
-        `${cost > 1 ? ` (needs ${cost})` : ''}${why && why !== 'line' ? `; ${why}` : ''}...`, pollMs, say, tellMs);
+      }, () => `${waiting()}...`, pollMs, say, tellMs, deadline);
     } finally {
       queue.leave(id);
+    }
+    if (got === null) {
+      say(`lane: not started within ${opts.waitTimeoutS}s (${waiting()})`);
+      return EXIT_WAIT_TIMEOUT;
     }
     const ran = Date.now();
     let status = 1;
     try {
-      const env = { ...process.env, LANE_WITH: [process.env.LANE_WITH, `${name}:${process.pid}`].filter(Boolean).join(',') };
-      status = lowCpu(() => runArgv(command, opts.cwd, env));
+      status = via && job ? runJob(via, { ...job, needs: name }, command, opts.cwd, withLeases(laneWith))
+        : lowCpu(() => runArgv(command, opts.cwd, laneWith));
       return status;
     } finally {
       for (const n of got) fs.rmSync(this.file(n), { force: true });
-      logRun(path.dirname(this.dir), {
+      // a run through calmrun is in calmrun stats, with its own wait
+      if (!via) logRun(path.dirname(this.dir), {
         at: start, res: name, label, cost, waitMs: ran - start, runMs: Date.now() - ran, status,
       });
     }
+  }
+
+  /**
+   * Who runs a `lane with` command: calmrun when it is installed (see calmrun.ts), lane itself
+   * (null) when it is not or is turned off; `nested` for build inside a calmrun job, which holds
+   * the points already.
+   */
+  route(name: string): Calmrun | 'nested' | null {
+    if (insideCalmrun()) return name === 'build' ? 'nested' : null;
+    return calmrun();
+  }
+
+  /** The claims that still count of the lane a command runs for. */
+  private claimsOfHolder(holder: Holder): LockInfo[] {
+    const all = holder.lanePath ? this.claimsOf(holder.lanePath) : this.list().filter((l) => !l.pid && l.lane === holder.lane);
+    return all.filter((l) => !l.stale);
   }
 }
 
@@ -235,6 +308,10 @@ export interface WithOptions {
   pollMs?: number;
   /** How often a waiting command says its place in line. */
   tellMs?: number;
+  /** Gives up after this many seconds of waiting: exit 75 (calmrun keeps the place, see --ticket). */
+  waitTimeoutS?: number;
+  /** calmrun only: the place in line an earlier --wait-timeout kept. */
+  ticket?: number;
 }
 
 /** Whether a `lane with` that is still running holds this resource for the process calling us. */
