@@ -74,6 +74,14 @@ export const config = {
   portStride: Number(process.env.LANE_PORT_STRIDE || 10),
   /** npm dependencies as hard links from a lane on the same lockfile (`--link-deps` for one lane). */
   linkDeps: process.env.LANE_LINK_DEPS === '1',
+  /**
+   * Backups kept per lane of work thrown away (LANE_KEEP_BACKUPS, default 10; 0: none are
+   * made). Read at each call.
+   */
+  get keepBackups(): number {
+    const n = Number(process.env.LANE_KEEP_BACKUPS);
+    return process.env.LANE_KEEP_BACKUPS && Number.isInteger(n) && n >= 0 ? n : 10;
+  },
 };
 
 /**

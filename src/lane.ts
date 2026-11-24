@@ -1,6 +1,7 @@
 // A lane: a worktree of a main clone under the lane root, usually a numbered pool slot.
 import fs from 'node:fs';
 import path from 'node:path';
+import { backupWork } from './backup.ts';
 import { locks } from './checks.ts';
 import { Checkout, MainClone } from './checkout.ts';
 import { dropEmptyBranch } from './branches.ts';
@@ -9,6 +10,7 @@ import { prFor, type Pr } from './github.ts';
 import { mergedInto } from './merged.ts';
 import { readMeta, writeMeta, type SlotMeta } from './meta.ts';
 import { holdAbandoned, processesUsing } from './stale.ts';
+import { log } from './text.ts';
 import { age, parseReason, slotNumber, workSafe, type Worktree } from './worktrees.ts';
 
 /**
@@ -184,10 +186,21 @@ export class Lane extends Checkout {
     return `gave back ${this.name}${task ? ` (was: ${task})` : ''}${kept}${left ? `; ${left}` : ''}`;
   }
 
-  /** Deletes the worktree, its folder and its local branch. */
-  remove(): string {
+  /**
+   * Deletes the worktree, its folder and its local branch; what that would lose is saved first
+   * under a backup ref (see backup.ts). `why` names the command, for the backup's message.
+   */
+  remove(why = 'lane rm'): string {
     if (samePath(this.dir, this.clone.dir)) throw new Error('refusing to remove a main clone');
     if (!underRoot(this.dir)) throw new Error(`${this.dir} is not under the lane root`);
+    let saved: string | null;
+    try {
+      saved = backupWork(this, why);
+    } catch (e) {
+      throw new Error(`could not back up the work in ${this.name}, so nothing was removed ` +
+        `(${e instanceof Error ? e.message : String(e)}); LANE_KEEP_BACKUPS=0 removes it without a backup`);
+    }
+    if (saved) log(saved);
     if (this.locked !== null) this.clone.tryGit('worktree', 'unlock', this.dir);
     this.dropClaims();
     this.clone.tryGit('worktree', 'remove', '--force', this.dir);
