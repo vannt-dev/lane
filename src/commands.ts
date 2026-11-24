@@ -10,7 +10,7 @@ import { SlotPool } from './pool.ts';
 import { LaneSetup } from './setup.ts';
 import { chosenDirs, currentDirs, missingDirs } from './sparse.ts';
 import { ABANDONED_MS } from './stale.ts';
-import { targetFor, type TargetOptions } from './target.ts';
+import { JJ_NO_SPARSE, targetFor, type TargetOptions } from './target.ts';
 import { briefText, log } from './text.ts';
 import { age } from './worktrees.ts';
 
@@ -40,6 +40,7 @@ export function cmdNew(repo: string, task: string | undefined, opts: NewOptions)
   const held = pool.heldFor(name);
   if (held) throw new Error(`${name} already holds ${held}: work there, or give it back with lane done ${held}`);
   const dirs = chosenDirs(clone, opts);
+  if (dirs.length > 0 && clone.jj()) throw new Error(JJ_NO_SPARSE);
   // read first: a broken .lane.json stops here, before a slot is taken
   const hooks = hooksFor(clone);
   const group = poolName(opts.pool);
@@ -183,5 +184,12 @@ export function cmdBrief(name?: string): void {
     lease: lane.lease(),
     stride: config.portStride,
     sparse: currentDirs(lane),
+    jj: jjFor(lane),
   }));
+}
+
+/** The jj side of a lane for its brief, when it is a jj workspace. */
+function jjFor(lane: Lane): { workspace: string; branch?: string } | undefined {
+  const ws = lane.jjWorkspace();
+  return ws ? { workspace: ws.name, branch: lane.branch || lane.taskBranch() } : undefined;
 }

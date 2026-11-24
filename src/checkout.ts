@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.ts';
 import { pickBase, repoSlug } from './detect.ts';
+import { JJ_MIN, jjKind, jjSupported, jjVersion, jjWorkspaces, type JjWorkspace } from './jj.ts';
 import { run, tryRun } from './proc.ts';
 import { log } from './text.ts';
 import { parseWorktrees, type Worktree } from './worktrees.ts';
@@ -61,11 +62,45 @@ export class Checkout {
 export class MainClone extends Checkout {
   readonly name: string;
   private baseBranch?: string;
+  private jjOn?: boolean;
+  private jjList?: JjWorkspace[];
 
   constructor(name: string) {
     super(path.join(config.repos, name));
     this.name = name;
+    if (jjKind(this.dir) === 'separate') {
+      throw new Error(`${this.dir} is a jj repository that is not colocated with git; lane works on git worktrees, ` +
+        'so it needs a colocated one: run jj git colocation enable there (jj 0.46+), or clone it with jj git clone --colocate');
+    }
     if (!fs.existsSync(path.join(this.dir, '.git'))) throw new Error(`no git clone at ${this.dir}`);
+  }
+
+  /**
+   * Whether new slots are jj workspaces: the clone is a colocated jj repository and jj is new
+   * enough to give a workspace its own git worktree. Otherwise they are plain git worktrees.
+   */
+  jj(): boolean {
+    if (this.jjOn !== undefined) return this.jjOn;
+    this.jjOn = false;
+    if (jjKind(this.dir) !== 'colocated') return false;
+    const v = jjVersion();
+    if (!v || !jjSupported(v)) {
+      const why = v ? `jj ${v.join('.')} is older than ${JJ_MIN.join('.')}` : 'jj is not on PATH';
+      console.error(`lane: note: ${this.name} is a colocated jj repository, but ${why}: new slots are plain git worktrees jj does not know`);
+      return false;
+    }
+    return (this.jjOn = true);
+  }
+
+  /** The jj workspaces of the clone (read once per run); none when it is no jj repository. */
+  jjWorkspaces(): JjWorkspace[] {
+    if (!this.jj()) return [];
+    return (this.jjList ??= jjWorkspaces(this.dir));
+  }
+
+  /** After lane added or forgot a workspace. */
+  jjChanged(): void {
+    this.jjList = undefined;
   }
 
   /** Every main clone in the repos folder. */

@@ -1,10 +1,16 @@
 // Where a lane's HEAD goes: each kind knows how to make a new worktree there and how to move
 // a reused slot there.
+import path from 'node:path';
 import { Checkout, type MainClone } from './checkout.ts';
 import { FAST } from './config.ts';
+import { addWorkspace, forgetWorkspace } from './jj.ts';
 import { tryRun } from './proc.ts';
 import { applySparse } from './sparse.ts';
 import { log } from './text.ts';
+
+/** Why a jj workspace gets every file: jj would record the files sparse checkout leaves out as deleted. */
+export const JJ_NO_SPARSE = 'sparse slots are not supported in a jj repository (jj would see the left-out files ' +
+  'as deleted): run lane new with --no-sparse';
 
 export abstract class Target {
   abstract describe(): string;
@@ -19,12 +25,36 @@ export abstract class Target {
    * checked out whole first.
    */
   add(clone: MainClone, dest: string, reason: string, dirs: readonly string[] = []): void {
+    if (clone.jj()) return this.addJj(clone, dest, reason, dirs);
     const empty = dirs.length > 0 ? ['--no-checkout'] : [];
     clone.git(...FAST, 'worktree', 'add', '--lock', '--reason', reason, ...empty, ...this.addArgs(dest));
     if (dirs.length === 0) return;
     const slot = new Checkout(dest);
     applySparse(slot, dirs);
     slot.git(...FAST, 'read-tree', '-mu', 'HEAD');
+  }
+
+  /**
+   * In a colocated jj repository: a jj workspace named after the slot, which jj makes as a git
+   * worktree too, then locked and switched here. jj cannot lock it from its first moment; until
+   * the lock a new slot is still not free (changed just now), so no other session takes it.
+   */
+  private addJj(clone: MainClone, dest: string, reason: string, dirs: readonly string[]): void {
+    if (dirs.length > 0) throw new Error(JJ_NO_SPARSE);
+    const name = path.basename(dest);
+    addWorkspace(clone.dir, dest, name);
+    clone.jjChanged();
+    try {
+      clone.git('worktree', 'lock', '--reason', reason, dest);
+      this.switchIn(new Checkout(dest));
+    } catch (e) {
+      clone.tryGit('worktree', 'unlock', dest);
+      forgetWorkspace(clone.dir, name);
+      clone.tryGit('worktree', 'remove', '--force', dest);
+      clone.tryGit('worktree', 'prune');
+      clone.jjChanged();
+      throw e;
+    }
   }
 
   /**

@@ -38,6 +38,8 @@ export interface LaneInfo {
   changed: number | null;
   /** Commits on no remote branch; null when detached or the folder is missing. */
   unpushed: number | null;
+  /** The jj workspace the lane is (colocated jj repository): its name and `@`'s change id; null otherwise. */
+  jj: { workspace: string; change: string } | null;
   /** The branch's newest pull request, null when it has none; left out when not asked (--local, detached). */
   pr?: { number: number; state: string; checks: string } | null;
 }
@@ -62,7 +64,10 @@ export function laneInfo(l: Lane, opts: { local: boolean }): LaneInfo {
     changed: l.exists ? l.dirty() : null,
     // A detached slot has no branch to push: its commits (verify's merges) go when it is taken again.
     unpushed: l.exists && l.branch ? l.ahead() : null,
+    jj: null,
   };
+  const ws = l.jjWorkspace();
+  if (ws) info.jj = { workspace: ws.name, change: ws.change };
   if (!opts.local && l.branch) {
     const pr = l.pr();
     info.pr = pr ? { number: pr.number, state: pr.state, checks: pr.checks } : null;
@@ -73,7 +78,8 @@ export function laneInfo(l: Lane, opts: { local: boolean }): LaneInfo {
 function tableRow(i: LaneInfo): string[] {
   const prText = i.pr === undefined ? '-' : i.pr ? `#${i.pr.number} ${i.pr.state.toLowerCase()} ${i.pr.checks}` : 'no PR';
   const local = i.changed === null ? '-' : `${i.changed} changed${i.unpushed === null ? '' : `, ${i.unpushed} unpushed`}`;
-  const branch = `${i.branch ?? '(detached)'}${i.sparse.length ? ` (sparse: ${i.sparse.join(', ')})` : ''}`;
+  const jj = i.jj ? ` (jj ${i.jj.workspace} @ ${i.jj.change})` : '';
+  const branch = `${i.branch ?? '(detached)'}${i.sparse.length ? ` (sparse: ${i.sparse.join(', ')})` : ''}${jj}`;
   return [`${i.name}${i.pool ? ` (${i.pool})` : ''}`, stateText({ ...i, since: i.heldSince === null ? null : Date.parse(i.heldSince) }), branch, local, prText];
 }
 

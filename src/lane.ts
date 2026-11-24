@@ -7,6 +7,7 @@ import { Checkout, MainClone } from './checkout.ts';
 import { dropEmptyBranch } from './branches.ts';
 import { rmLaneFolder, samePath, underRoot } from './fsutil.ts';
 import { prFor, type Pr } from './github.ts';
+import { forgetWorkspace, workspaceAt, type JjWorkspace } from './jj.ts';
 import { mergedInto } from './merged.ts';
 import { readMeta, writeMeta, type SlotMeta } from './meta.ts';
 import { holdAbandoned, processesUsing } from './stale.ts';
@@ -73,6 +74,11 @@ export class Lane extends Checkout {
 
   get exists(): boolean {
     return fs.existsSync(this.dir);
+  }
+
+  /** The jj workspace this lane is, in a colocated jj repository (see jj.ts). */
+  jjWorkspace(): JjWorkspace | undefined {
+    return workspaceAt(this.clone.jjWorkspaces(), this.dir);
   }
 
   meta(): SlotMeta {
@@ -171,7 +177,10 @@ export class Lane extends Checkout {
     for (const c of all.claimsOf(this.dir)) all.release(c.name);
   }
 
-  /** Detached (the branch is free elsewhere, deleted when safe), unlocked, folder and caches kept. */
+  /**
+   * Detached (the branch is free elsewhere, deleted when safe), unlocked, folder and caches kept.
+   * A jj workspace stays one: jj's forget would delete the git worktree the slot is.
+   */
   giveBack(safe: boolean): string {
     const task = this.task();
     const started = this.taskBranch();
@@ -201,13 +210,18 @@ export class Lane extends Checkout {
         `(${e instanceof Error ? e.message : String(e)}); LANE_KEEP_BACKUPS=0 removes it without a backup`);
     }
     if (saved) log(saved);
+    const ws = this.jjWorkspace();
     if (this.locked !== null) this.clone.tryGit('worktree', 'unlock', this.dir);
     this.dropClaims();
     this.clone.tryGit('worktree', 'remove', '--force', this.dir);
     const gone = !this.exists || rmLaneFolder(this.dir);
     this.clone.tryGit('worktree', 'prune');
     if (this.branch) this.clone.tryGit('branch', '-D', this.branch);
-    const what = `${this.name}${this.branch ? ` and local branch ${this.branch}` : ''}`;
-    return gone ? `removed ${what}` : `removed ${what}; the folder itself is left (see warning)`;
+    // after git: jj's forget deletes the slot's .git file, and git would no longer remove the folder
+    const forgot = ws !== undefined && forgetWorkspace(this.clone.dir, ws.name);
+    if (ws) this.clone.jjChanged();
+    const left = ws && !forgot ? `; jj did not forget workspace ${ws.name}: jj workspace forget ${ws.name} in the main clone` : '';
+    const what = `${this.name}${this.branch ? ` and local branch ${this.branch}` : ''}${forgot ? ` and jj workspace ${ws.name}` : ''}`;
+    return gone ? `removed ${what}${left}` : `removed ${what}${left}; the folder itself is left (see warning)`;
   }
 }

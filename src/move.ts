@@ -27,6 +27,8 @@ export function cmdMove(name: string, opts: { to: string; lease?: string }): voi
   const to = ROOTS.indexOf(opts.to);
   if (to < 0) throw new Error(`--to takes main or spare: "${opts.to}" is neither`);
   const lane = findLane(name);
+  const ws = lane.jjWorkspace();
+  if (ws) throw new Error(`${name} is jj workspace ${ws.name}, and jj cannot move a workspace: lane rm ${name}, then lane new`);
   const destRoot = config.roots[to];
   if (destRoot === undefined) throw new Error('no spare root: set LANE_ROOT_SPARE to a folder on another drive');
   if (rootIndex(lane.dir) === to) throw new Error(`${name} is already on ${label(to)} (${destRoot})`);
