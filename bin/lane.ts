@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
 import {
-  cmdBrief, cmdBump, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdMove, cmdNew, cmdPort, cmdRelease, cmdRemove,
+  cmdBackups, cmdBrief, cmdBump, cmdClaim, cmdClean, cmdDone, cmdFree, cmdList, cmdLocks, cmdMove, cmdNew, cmdPort, cmdRelease, cmdRemove,
   BISECT_MAX, cmdStats, cmdSync, cmdTune, cmdVerify, cmdWith, config, withSlotsFor,
 } from '../src/index.ts';
 
@@ -43,7 +43,11 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
                              then pull the main clones. A slot still held stays (follow-up
                              rounds reuse it) unless --force; one with a claim or a process
                              in it always stays
-  lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work)
+  lane rm <lane> [--force]   Delete a slot for good (--force: held or with unpushed work).
+                             What it would lose (uncommitted and untracked files, commits only
+                             its branch has) is first saved under refs/lane-backup/<lane>/<time>
+                             in the main clone; it says where and how to restore it
+  lane backups [<repo>]      Those backups, newest first, and how to restore or drop one
   lane move <lane> --to main|spare [--lease ID]
                              Move a slot to the lane root or the spare one (lane list says when
                              the lane root has room again). Across drives the slot is made
@@ -91,7 +95,8 @@ const HELP = `lane: one git worktree per task, so tasks in one repo run side by 
   <repo> is a folder in ${process.env.LANE_REPOS || '$LANE_REPOS'}.
   Env: LANE_ROOT and LANE_REPOS (required, no default), LANE_MAX_SLOTS, LANE_PORT_STRIDE,
   LANE_ROOT_SPARE (a second folder for new slots once the lane root's drive has less than
-  LANE_MIN_FREE_GB free; 10 GB when not set).`;
+  LANE_MIN_FREE_GB free; 10 GB when not set), LANE_KEEP_BACKUPS (backups kept per lane,
+  default 10; 0: none made).`;
 
 // Everything after "--" is the command for `lane with`, passed through untouched.
 const argv = process.argv.slice(2);
@@ -167,6 +172,7 @@ function main(): number {
   } else if (cmd === 'list') cmdList({ local: values.local, json: values.json });
   else if (cmd === 'clean') cmdClean({ yes: values.yes, force: values.force });
   else if (cmd === 'rm' && one) cmdRemove(a, { force: values.force });
+  else if (cmd === 'backups' && b === undefined) cmdBackups(a);
   else if (cmd === 'move' && one && values.to !== undefined) cmdMove(a, { to: values.to, lease: values.lease });
   else if (cmd === 'verify' && one) {
     const bisectMax = values['bisect-max'] === undefined ? undefined : whole(values['bisect-max'], '--bisect-max', 0, 1000);

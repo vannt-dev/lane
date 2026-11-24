@@ -114,7 +114,7 @@ export function cmdClean(opts: { yes: boolean; force: boolean }): void {
   for (const l of lanes.filter((x) => x.branch || !x.exists)) {
     const { act, why } = l.exists ? verdict(l, l.pr(), opts.force) : { act: 'remove', why: 'folder missing' };
     log(`${act.padEnd(9)}  ${l.name}  (${why})`);
-    if (act === 'remove') actions.push(() => log(l.remove()));
+    if (act === 'remove') actions.push(() => log(l.remove('lane clean')));
     if (act === 'give back') actions.push(() => giveBack(l));
   }
   actions.push(...branchDrops(lanes));

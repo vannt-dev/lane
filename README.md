@@ -94,6 +94,7 @@ lane list                         # every lane: held or free, branch, changes, P
 | `LANE_POOLS` | Max slots of named pools, e.g. `review=2,ci=1` (see Pools) |
 | `LANE_ROOT_SPARE` | A second folder for new slots, on another drive, used when the lane root's drive is short of space (see A spare root) |
 | `LANE_MIN_FREE_GB` | Free space a drive must have for a new slot, in GB. Not set: 10 with `LANE_ROOT_SPARE`, else no check |
+| `LANE_KEEP_BACKUPS` | Backups kept per lane of work `lane rm --force` or `lane clean` threw away (default 10; `0`: none made, see Backups) |
 | `LANE_WITH_SLOTS` | Slots of `lane with` resources, e.g. `build=6,gpu=1` (default: build suits the machine, see `lane tune`; others 1) |
 | `LANE_LOW_CPU` | `0`: commands run by `lane with` keep normal CPU priority (default: below normal) |
 | `LANE_WITH_MIN_FREE_GB` | Free memory a `lane with` command needs to start beside a running one (default: an eighth of the RAM, at least 3; `0`: off) |
@@ -111,7 +112,8 @@ lane list                         # every lane: held or free, branch, changes, P
 | `lane free <lane> [--yes] [--force]` | Frees a hold that looks abandoned (see Left-behind holds). Never when work in it would be lost. `--force` frees one that does not look abandoned. |
 | `lane list [--local] [--json]` | Every lane: held (task, for how long, and whether it looks abandoned) or free, branch, local changes, PR and CI (`--local`: no GitHub calls). `--json` prints the same as one JSON array, see For scripts. |
 | `lane clean [--yes] [--force]` | Gives back the lanes whose work merged (see Merged), removes lanes whose folder is gone and leftover folders, deletes the task branches given-back slots left with no commits of their own, then fast-forwards the main clones. A merged lane still held stays, since follow-up rounds (review fixes, bugs) reuse it, unless its hold looks abandoned or `--force`; one with a claim or a process in it always stays. |
-| `lane rm <lane> [--force]` | Deletes a slot for good. Refuses a held slot or unpushed work without `--force`. |
+| `lane rm <lane> [--force]` | Deletes a slot for good. Refuses a held slot or unpushed work without `--force`. What it would lose is saved first, see Backups. |
+| `lane backups [<repo>]` | The backups lane made before throwing work away, newest first, and how to restore or drop one (see Backups). |
 | `lane move <lane> --to main\|spare [--lease ID]` | Moves a slot between the lane root and the spare root (see A spare root). |
 | `lane port <usual port> [k]` | Port k (0 to stride - 1) of this slot's range: the usual port + slot x `LANE_PORT_STRIDE` + k. |
 | `lane verify <repo> [--cmd C]... [--keep] [--no-bisect] [--bisect-max N]` | Merges every open lane of the repository on top of the base, in a slot of the pool, and runs the checks: finds lanes that merge cleanly as text but break each other, before the first one merges. A lane that does not merge is listed with the lane it conflicts with and the files. When the checks fail it looks for the lanes to blame, see Which lanes break each other (`--no-bisect` skips that). Kept and held when it fails, to look at. |
@@ -301,6 +303,26 @@ or, without asking GitHub, when the base branch has it: the lane's commits are i
 merging the lane into the base changes nothing (a squash merge), or the lane's whole change
 has the patch id of one commit on the base (a squash merge whose lines were changed again
 later). A lane still on the commit it started from has no work and is never merged.
+
+## Backups
+
+Before `lane rm --force` deletes a slot with work in it (or `lane clean` removes a lane whose
+folder is gone but whose branch has commits of its own), lane saves that work as a commit in
+the main clone, under `refs/lane-backup/<lane>/<time>`: the uncommitted changes and the
+untracked files (not the ignored ones) on top of the slot's HEAD, which is the commit's parent.
+Nothing is saved when nothing would be lost: no changes, and every commit also on a remote
+branch, a tag or another branch. lane prints one line (wrapped here, `<ref>` stands for the ref):
+
+```text
+backup of myrepo-1: refs/lane-backup/myrepo-1/2026-11-24T15-30-12-345Z (2 uncommitted, 1 unpushed
+commit(s)); the files: git checkout <ref> -- .; the branch: git branch feat/login <ref>~1
+```
+
+Run either command in any checkout of the repository (refs are shared by its worktrees), for
+example a new slot: `git checkout <ref> -- .` writes the saved files back (staged),
+`git branch <name> <ref>~1` makes the branch again at the commit it was on. `lane backups`
+lists them. lane keeps the newest `LANE_KEEP_BACKUPS` (default 10) per lane and drops older
+ones; drop one yourself with `git update-ref -d <ref>`. `LANE_KEEP_BACKUPS=0` makes none.
 
 ## Left-behind holds
 
@@ -530,6 +552,7 @@ CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24.
 | `src/index.ts` | What the command line calls |
 | `src/commands.ts` | new, done, free, port, brief |
 | `src/housekeeping.ts` | list, clean, rm |
+| `src/backup.ts` | The backup of a slot's work before it is removed, and `lane backups` |
 | `src/move.ts` | move: a slot between the lane root and the spare root |
 | `src/find.ts` | The lane a command is about |
 | `src/integrate.ts` | verify and sync (class `Integration`) |
