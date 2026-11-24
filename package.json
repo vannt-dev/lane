@@ -1,6 +1,6 @@
 {
   "name": "@vannt-dev/lane",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "One git worktree per task, so tasks in one repo can run side by side",
   "license": "MIT",
   "author": "Van Nguyen (https://github.com/vannt-dev)",
