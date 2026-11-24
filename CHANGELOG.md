@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/vannt-dev/lane/compare/v0.18.0...v0.19.0) (2026-11-24)
+
+
+### Features
+
+* make slots jj workspaces in colocated jj repositories ([#59](https://github.com/vannt-dev/lane/issues/59)) ([14f1968](https://github.com/vannt-dev/lane/commit/14f1968dde2a0a546689fe52403c923806fec3bd))
+
 ## [0.18.0](https://github.com/vannt-dev/lane/compare/v0.17.0...v0.18.0) (2026-11-24)
 
 
