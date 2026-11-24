@@ -12,7 +12,7 @@ const listJson = (local = true) =>
   (JSON.parse(capture(() => cmdList({ local, json: true })).out) as LaneInfo[]).sort((x, y) => x.name.localeCompare(y.name));
 const FIELDS = [
   'name', 'repo', 'slot', 'path', 'pool', 'state', 'task', 'lease', 'heldSince', 'heldMs', 'abandoned', 'idleMs',
-  'branch', 'sparse', 'changed', 'unpushed',
+  'branch', 'sparse', 'changed', 'unpushed', 'jj',
 ];
 
 test('list --json with no lanes is an empty array', () => {

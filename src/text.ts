@@ -67,6 +67,13 @@ export function laneNotes(h: HoldInfo): string {
   return `${NOTES_HEADER}\n\n${intro}\n\n${rules.join('\n')}\n`;
 }
 
+/** For a lane that is a jj workspace: both tools work, and the work must reach the remote branch. */
+function jjRule(workspace: string, branch = '<branch>'): string {
+  return `- The repo is also a jj (Jujutsu) repo and this checkout is its workspace \`${workspace}\`: jj and git both work ` +
+    `here. Before \`lane done\`, push the work to branch \`${branch}\` (\`jj bookmark set ${branch} -r @-\` and ` +
+    `\`jj git push -b ${branch}\`, or \`git push\`).`;
+}
+
 /** What an agent working in a lane must know, to paste at the top of its task. */
 export function briefText(input: HoldInfo & {
   lane: string;
@@ -76,6 +83,8 @@ export function briefText(input: HoldInfo & {
   mainClone: string;
   others: readonly string[];
   checks: readonly string[];
+  /** The jj workspace the lane is (colocated jj repository), and the branch its work goes on. */
+  jj?: { workspace: string; branch?: string };
 }): string {
   const p = unix(input.path);
   const away = input.others.length ? ` or in the other lanes: ${input.others.map((o) => `\`${unix(o)}\``).join(', ')}.` : '.';
@@ -84,6 +93,7 @@ export function briefText(input: HoldInfo & {
     `- Your checkout: \`${p}\`, branch \`${input.branch}\` of ${input.repo}. Other tasks run in other lanes at the same time.`,
     `- Start every shell command with \`cd ${p} && \`; give every file tool an absolute path under \`${p}\`.`,
     `- Never read, edit or run anything in the main clone \`${unix(input.mainClone)}\`${away}`,
+    ...(input.jj ? [jjRule(input.jj.workspace, input.jj.branch)] : []),
     ...SHARED_RULES,
     ...(input.checks.length ? [`- Checks to pass before you push: ${input.checks.map((c) => `\`${c}\``).join(', ')}.`] : []),
     ...holdRules(input),

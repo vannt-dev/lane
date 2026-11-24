@@ -360,6 +360,7 @@ lane list --json --local | jq -r '.[] | select(.state == "free") | .path'   # fr
 | `sparse` | The folders of a sparse lane; `[]` when it has every file. |
 | `changed` | Uncommitted and untracked files; `null` when the folder is gone. |
 | `unpushed` | Commits on no remote branch; `null` when detached. |
+| `jj` | In a colocated jj repository, the jj workspace the lane is: `{ "workspace": "myrepo-2", "change": "qxkmkttr" }` (`change`: the change id of its working-copy commit); `null` otherwise (see jj (Jujutsu) repositories). |
 | `pr` | The branch's newest pull request: `{ "number": 12, "state": "OPEN", "checks": "pass" }` (`state`: `OPEN`, `MERGED`, `CLOSED`; `checks`: `none`, `pass`, `pending`, `fail`), or `null` when it has none. Left out with `--local` and for a detached lane. |
 
 ## How the lanes share
@@ -526,6 +527,36 @@ lane new myrepo feat/login --open --agent "aider --yes"   # any command line, as
 - `CLAUDE.local.md` is read by Claude Code only. Give any other agent `lane brief` at the top of
   its task (or put it in that agent's own instructions file).
 
+## jj (Jujutsu) repositories
+
+A main clone that is a colocated jj repository (`.jj` next to `.git`, as `jj git init --colocate`
+or `jj git clone --colocate` make it) gets its slots as jj workspaces, so `jj workspace list`
+and `jj log` see every lane. It needs jj 0.46 or later on `PATH`, the first that gives a
+workspace its own git worktree.
+
+- `lane new` makes a new slot with `jj workspace add --colocate --name <slot>`, then locks it
+  and puts it on the task's branch with git, as for any slot. jj snapshots the main clone's
+  working copy while it adds the workspace, as every jj command run there does.
+- The slot stays a git worktree: holds, leases, `lane list`, `lane done`, `lane verify` and the
+  backups before `lane rm` work on the git side as before. A commit made with jj (`jj commit`)
+  leaves git detached at it; push it with `jj bookmark set <branch> -r @-` and
+  `jj git push -b <branch>` (or `git push`) before `lane done`, which still refuses unpushed work.
+- `lane done` and `lane free` keep the workspace: the slot is kept for the next task, and
+  `jj workspace forget` would delete the git worktree it is. `lane rm` and `lane clean`
+  (a lane whose folder is gone) forget it after git has removed the slot.
+- `lane list` shows the workspace and the change id of its working-copy commit,
+  `feat/login (jj myrepo-1 @ qxkmkttr)`; `lane list --json` has them in `jj`. `lane brief` tells
+  the agent it may use jj and how to push.
+- Not for jj workspaces: sparse slots (jj would record the files git leaves out as deleted;
+  `lane new` says to use `--no-sparse`) and `lane move` (jj cannot move a workspace: `lane rm`
+  the slot and take a new one). jj records a workspace's folder relative to the main clone, so
+  a spare root on another drive was not tried.
+- Without jj on `PATH` (or with an older one) lane prints a note and makes plain git worktrees,
+  which jj does not list. Slots made before the repository became a jj repository stay plain
+  git worktrees too.
+- A jj repository that is not colocated (no `.git` next to `.jj`) is refused, with how to
+  colocate it: `jj git colocation enable` in it.
+
 ## Known
 
 - Removing a lane falls back to a `\\?\` path delete when git hits Windows' path limit, and
@@ -554,6 +585,7 @@ CI runs both on Ubuntu, Windows and macOS with Node 22.18 and 24.
 | `src/housekeeping.ts` | list, clean, rm |
 | `src/backup.ts` | The backup of a slot's work before it is removed, and `lane backups` |
 | `src/move.ts` | move: a slot between the lane root and the spare root |
+| `src/jj.ts` | jj (Jujutsu): colocated repositories, their workspaces |
 | `src/find.ts` | The lane a command is about |
 | `src/integrate.ts` | verify and sync (class `Integration`) |
 | `src/resources.ts` | claim, release, with, locks, stats |
