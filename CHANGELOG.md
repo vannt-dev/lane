@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/vannt-dev/lane/compare/v0.17.0...v0.18.0) (2026-11-24)
+
+
+### Features
+
+* **rm:** back up a slot's work before lane throws it away ([#57](https://github.com/vannt-dev/lane/issues/57)) ([752c913](https://github.com/vannt-dev/lane/commit/752c9131d247d4b87cf598b8483863c7aab7b619))
+
 ## [0.17.0](https://github.com/vannt-dev/lane/compare/v0.16.0...v0.17.0) (2026-11-23)
 
 
